@@ -1,0 +1,34 @@
+# секреты — НИКОГДА не коммитить
+.env
+habits.key
+habits.key.pub
+*.pem
+
+# бэкапы прода (дампы БД, конфиги с паролями)
+habits/backups/
+
+# IDE и временное
+.idea/
+.DS_Store
+.claude/
+
+# вендоренная копия библиотеки старого бота
+pkg/
+
+# бинарники старых сборок
+habits/bakend/habits
+habits/bakend/h_sqlite
+habits/bakend/cmd/habits_v3/habits3
+habits/bakend/cmd/habits_v3/habits_v2_api
+habits/bakend/cmd/habits_v3/main_go_mongo
+
+# скриншоты
+habits/frontend/webapp/Снимок*
+
+# сборка
+node_modules/
+dist/
+
+# старые бинарники с зашитым токеном
+server-ver/webapps/striks-api/habits
+server-ver/webapps/striks-api/striksapi

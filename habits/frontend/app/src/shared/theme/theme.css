@@ -1,0 +1,135 @@
+/* Имена переменных портированы из habits/frontend/webapp/style.css,
+   тема ставится на <html data-theme> из Telegram.WebApp.colorScheme. */
+:root,
+:root[data-theme='dark'] {
+  --bg-color: #121212;
+  --bg-secondary: #252525;
+  --hover-bg-color: #424242;
+  --text-color: #e0e0e0;
+  --text-secondary: #aaa;
+  --card-rgb: 31, 31, 31;
+  --card-color: rgba(var(--card-rgb), var(--card-alpha, 1));
+  --cell-bg-color: #2b2b2b;
+  --accent-color: #60a5fa;
+}
+
+:root[data-theme='light'] {
+  --bg-color: #ffffff;
+  --bg-secondary: #ececec;
+  --hover-bg-color: #d4d4d4;
+  --text-color: #000000;
+  --text-secondary: #666;
+  --card-rgb: 249, 249, 249;
+  --card-color: rgba(var(--card-rgb), var(--card-alpha, 1));
+  --cell-bg-color: #e2e2e2;
+  --accent-color: #2563eb;
+}
+
+/* Карточки-«стекло»: когда включена полупрозрачность/размытие
+   (data-card-glass на <html>), фон под карточкой размывается через
+   backdrop-filter. Здесь — только те классы, что ОДНОЗНАЧНО являются
+   карточками во всём приложении (уникальны и всегда на var(--card-color)).
+   Неоднозначные (.section/.entry/.category/.group — где такой же класс
+   встречается и у не-карточек) размываются локальным правилом в scoped-стилях
+   своего компонента (см. `.card-glass` в theme + правило в компонентах). */
+:root[data-card-glass] .tile,
+:root[data-card-glass] .drawer,
+:root[data-card-glass] .search-group,
+:root[data-card-glass] .upcoming,
+:root[data-card-glass] .mini-settings,
+:root[data-card-glass] .admin-pages,
+:root[data-card-glass] .check-group,
+:root[data-card-glass] .contact,
+:root[data-card-glass] .diff,
+:root[data-card-glass] .dropdown,
+:root[data-card-glass] .mc-card,
+:root[data-card-glass] .tm-card,
+:root[data-card-glass] .pass-folder,
+:root[data-card-glass] .pinned-block,
+:root[data-card-glass] .project-group,
+:root[data-card-glass] .srv-card,
+:root[data-card-glass] .tpl-section,
+:root[data-card-glass] .content-hit,
+:root[data-card-glass] .currency-row,
+:root[data-card-glass] .incoming,
+:root[data-card-glass] .new-project-btn,
+:root[data-card-glass] .rem-card,
+:root[data-card-glass] .rev-row,
+:root[data-card-glass] .modal-content,
+:root[data-card-glass] .card-glass {
+  backdrop-filter: blur(var(--card-blur, 0px));
+  -webkit-backdrop-filter: blur(var(--card-blur, 0px));
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  font-family: 'Inter', system-ui, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Слой пользовательского фона: fixed-див под контентом. На iOS
+   background-attachment: fixed не работает, а такой слой — работает. */
+#app-background,
+#app-background-dim {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  transform: translateZ(0);
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  /* иначе UA-цвет (чёрный) — иконки-кнопки (＋ и т.п.) пропадали в тёмной теме */
+  color: inherit;
+}
+
+input,
+select {
+  font: inherit;
+  background: var(--bg-secondary);
+  color: var(--text-color);
+  border: 1px solid var(--hover-bg-color);
+  border-radius: 6px;
+  padding: 7px;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  backdrop-filter: blur(5px);
+}
+
+.modal-content {
+  background-color: var(--card-color);
+  color: var(--text-color);
+  border-radius: 20px;
+  padding: 20px;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  /* высокие модалки не должны уходить за экран — прокручиваем содержимое.
+     dvh точнее на мобильных (Telegram webview), vh — фолбэк для старых движков */
+  max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+
+.modal-content h3 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 10px;
+}

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta charset="UTF-8">
+    <title>Daily Tracker</title>
+    <link rel="stylesheet" href="style.css?v=142">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+        @theme {
+            --color-clifford: #da373d;
+        }
+    </style>
+</head>
+<body>
+<div class="max-w-3xl mx-auto p-4">
+    <div id="page-main">
+        <!-- Вкладки -->
+        <div class="flex mb-4 border-b border-gray-300">
+            <button id="tab-tracker" class="flex-1 py-2 text-center border-b-2 border-blue-500 font-semibold">Tracker</button>
+            <button id="tab-checks" class="flex-1 py-2 text-center border-b-2">Checks</button>
+        </div>
+
+        <!-- Вкладка Tracker -->
+        <div id="trackerTab">
+            <div id="categories" class="space-y-4"></div>
+            <input class="full-input" id="new-category" placeholder="Новая категория...">
+            <button id="add-btn" id2="addCategory" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded w-full">Добавить категорию</button>
+        </div>
+
+        <!-- Вкладка Checks -->
+        <div id="checksTab" class="hidden">
+            <div id="checkGroups" class="space-y-4"></div>
+            <div id="check-groups"></div>
+            <input class="full-input" id="new-group" placeholder="Новая группа...">
+            <button id="add-group-btn" id2="addCheckGroup" class="mt-4 px-4 py-2 bg-green-600 text-white rounded w-full">Добавить группу</button>
+        </div>
+    </div>
+    <div id="page-category-settings" class="settings">
+        <div>
+            <label for="category-name">Название категории</label><input class="full-input" id="category-name" type="text">
+        </div>
+        <div>
+            <label for="category-color">Цвет элементов категории</label> <input id="category-color" type="color">
+        </div>
+        <div>
+            <button id="save" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded w-full">Сохранить</button>
+        </div>
+    </div>
+    <div id="page-group-settings" class="settings">
+
+    </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-4 py-2 rounded shadow-lg opacity-0 transition-opacity duration-500 pointer-events-none"></div>
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="script.js?v=142"></script>
+<h5 class="text-2xl font-bold mb-4 text-center">v2.142
+</h5>
+</body>
+</html>
