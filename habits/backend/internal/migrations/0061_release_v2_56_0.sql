@@ -1,0 +1,14 @@
+-- +goose Up
+-- Запись релиза в журнал (notified_at NULL — бот уведомит админа на старте).
+-- +goose StatementBegin
+INSERT INTO releases (version, released_on, title, public_notes, tech_notes) VALUES (
+  '2.56.0',
+  '2026-07-29',
+  'Food — план питания: участники, неделя целиком, подсказка в дневнике',
+  E'Доводка плана питания на странице Food.\n— Участников стало видно: внутри плана теперь подписанные кнопки «👥 Участники», «📤 Поделиться» и «⚙️ Настройки» вместо мелких иконок в углу.\n— Участника можно привязать к аккаунту Habits (@username или id). Тогда он открывает общий план у себя и переносит в свой дневник именно свои порции — перенос сам предлагает его.\n— Копировать можно не только день, но и неделю целиком — кнопка ⧉ рядом с переключателем недель.\n— На вкладке «Дневник» появилась подсказка «📅 По плану» с кнопкой переноса, если на этот день что-то запланировано.\n— В шапке дня плана видна ваша цель по калориям, а раскрытые дни теперь запоминаются.\n— Исправлено: правка имени участника молча снимала привязку к пользователю.',
+  E'Доводка v2.55 до заявленного объёма — миграций схемы нет.\nУчастники: FoodPlanParticipant + UserLabel/IsMe (listFoodPlanParticipants получил viewerID и LEFT JOIN users). Запрос участника принимает поле user (id/@username) — резолв через FindUserExact в resolveParticipantUser; пустая строка снимает привязку.\nБАГФИКС: httpapi.updateParticipant собирал СВЕЖИЙ store.FoodPlanParticipant, поэтому PUT без user_id затирал привязку (UPDATE ... SET user_id=$3 с nil). Теперь PUT частичный: seed из GetFoodPlanParticipant.\nFoodPlan.GoalCalories — FoodGoalForDate(смотрящий, start_date | сегодня); в UI показывается только у плана без участников, иначе осмысленны цели участников.\nНовый GET /food/plans/today?date= → FoodPlansForDate: планы с start_date, покрывающие дату (owner + shares, не archived), day_index = date - start_date, слоты дня (общие + мои как участника), applied по source_type=plan+source_id. listFoodPlanSlots получил фильтр по дню — подсказка в Дневнике дёргается на каждую смену даты и не должна тянуть все слоты 90-дневного плана.\nUI: подписанные кнопки действий плана (участников иначе не находили), копирование недели (copy-days с count = длина недели, хвост плана проверяется на фронте), карточка «По плану» в DiaryTab, предвыбор участника-себя в PlanApplyModal.\nРаскрытые дни — shared/collapsed.ts, новый ключ food_plan_open (добавлен и в белый список setCollapsed, иначе 400): хранит РАСКРЫТЫЕ дни, ключ planId*100+dayIndex, чужие планы в наборе сохраняются.\nE2E: привязка по id, is_me/user_label, PUT без user не снимает привязку, снятие пустой строкой, несуществующий юзер → 400, копирование недели (3 слота 0-6 → 7-13), goal_calories 2000, today (день/участник/applied, дата вне периода → пусто), collapsed food_plan_open 204 + чужой ключ 400.'
+);
+-- +goose StatementEnd
+
+-- +goose Down
+DELETE FROM releases WHERE version = '2.56.0';

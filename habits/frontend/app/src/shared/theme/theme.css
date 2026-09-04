@@ -1,0 +1,225 @@
+/* Имена переменных портированы из habits/frontend/webapp/style.css,
+   тема ставится на <html data-theme> из Telegram.WebApp.colorScheme. */
+/* color-scheme — до применения токенов из JS, чтобы родные элементы (список
+   <select>, полосы прокрутки) не мигали светлыми на первой отрисовке. */
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg-color: #121212;
+  --bg-secondary: #252525;
+  --hover-bg-color: #424242;
+  --text-color: #e0e0e0;
+  --text-secondary: #aaa;
+  --card-rgb: 31, 31, 31;
+  --card-color: rgba(var(--card-rgb), var(--card-alpha, 1));
+  --cell-bg-color: #2b2b2b;
+  --accent-color: #60a5fa;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg-color: #ffffff;
+  --bg-secondary: #ececec;
+  --hover-bg-color: #d4d4d4;
+  --text-color: #000000;
+  --text-secondary: #666;
+  --card-rgb: 249, 249, 249;
+  --card-color: rgba(var(--card-rgb), var(--card-alpha, 1));
+  --cell-bg-color: #e2e2e2;
+  --accent-color: #2563eb;
+}
+
+/* Карточки-«стекло»: когда включена полупрозрачность/размытие
+   (data-card-glass на <html>), фон под карточкой размывается через
+   backdrop-filter. Здесь — только те классы, что ОДНОЗНАЧНО являются
+   карточками во всём приложении (уникальны и всегда на var(--card-color)).
+   Неоднозначные (.section/.entry/.category/.group — где такой же класс
+   встречается и у не-карточек) размываются локальным правилом в scoped-стилях
+   своего компонента (см. `.card-glass` в theme + правило в компонентах). */
+:root[data-card-glass] .tile,
+:root[data-card-glass] .drawer,
+:root[data-card-glass] .search-group,
+:root[data-card-glass] .upcoming,
+:root[data-card-glass] .mini-settings,
+:root[data-card-glass] .admin-pages,
+:root[data-card-glass] .check-group,
+:root[data-card-glass] .contact,
+:root[data-card-glass] .diff,
+:root[data-card-glass] .dropdown,
+:root[data-card-glass] .mc-card,
+:root[data-card-glass] .tm-card,
+:root[data-card-glass] .pass-folder,
+:root[data-card-glass] .pinned-block,
+:root[data-card-glass] .project-group,
+:root[data-card-glass] .srv-card,
+:root[data-card-glass] .tpl-section,
+:root[data-card-glass] .content-hit,
+:root[data-card-glass] .currency-row,
+:root[data-card-glass] .incoming,
+:root[data-card-glass] .new-project-btn,
+:root[data-card-glass] .rem-card,
+:root[data-card-glass] .rev-row,
+:root[data-card-glass] .modal-content,
+:root[data-card-glass] .card-glass {
+  backdrop-filter: blur(var(--card-blur, 0px));
+  -webkit-backdrop-filter: blur(var(--card-blur, 0px));
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  font-family: 'Inter', system-ui, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Слой пользовательского фона: fixed-див под контентом. На iOS
+   background-attachment: fixed не работает, а такой слой — работает. */
+#app-background,
+#app-background-dim {
+  position: fixed;
+  inset: 0;
+  /* ширина от вьюпорта, а не от inset: иначе появление полосы прокрутки
+     (свернули блок — контент стал короче) меняет ширину слоя, и фон дёргается */
+  width: 100vw;
+  z-index: -1;
+  pointer-events: none;
+  transform: translateZ(0);
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  /* иначе UA-цвет (чёрный) — иконки-кнопки (＋ и т.п.) пропадали в тёмной теме */
+  color: inherit;
+}
+
+/* Поля ввода: фон ТОЛЬКО непрозрачный. Полупрозрачный (var(--card-color))
+   выглядит нормально в обычном браузере, но вебвью Telegram на десктопе
+   подкладывает под родной элемент свой светлый фон — и по тёмной теме
+   получалось белое поле со светлым текстом. */
+input,
+select,
+textarea {
+  font: inherit;
+  background: var(--bg-secondary);
+  color: var(--text-color);
+  border: 1px solid var(--hover-bg-color);
+  border-radius: 6px;
+  padding: 7px;
+}
+
+/* Пункты выпадающего списка рисует сам браузер: на части движков color-scheme
+   до них не доходит, поэтому цвета задаём явно. */
+option,
+optgroup {
+  background: var(--bg-secondary);
+  color: var(--text-color);
+}
+
+/* Плавающая кнопка «копировать» у сфокусированного текстового поля
+   (см. shared/copyField.ts): fixed-оверлей поверх правого края поля. */
+.copy-field-btn {
+  position: fixed;
+  z-index: 3000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--hover-bg-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  opacity: 0.85;
+}
+
+.copy-field-btn:active {
+  color: var(--accent-color);
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  backdrop-filter: blur(5px);
+}
+
+.modal-content {
+  background-color: var(--card-color);
+  color: var(--text-color);
+  border-radius: 20px;
+  padding: 20px;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  /* высокие модалки не должны уходить за экран — прокручиваем содержимое.
+     dvh точнее на мобильных (Telegram webview), vh — фолбэк для старых движков */
+  max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+
+.modal-content h3 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 10px;
+}
+
+/* Рамки карточек и кнопок.
+
+   Рисуются inset-тенью, а НЕ border: тень не влияет на размеры вообще, то
+   есть «забирается у ширины» — при включении рамки блоки не разъезжаются.
+   border-radius она уважает, поэтому углы остаются скруглёнными.
+
+   Селекторы карточек те же, что у «стекла» выше: единого класса карточки в
+   приложении нет (см. комментарий там же), новые карточки должны получать
+   класс .card-glass — тогда оба списка со временем схлопнутся. */
+:root[data-card-border] .tile,
+:root[data-card-border] .drawer,
+:root[data-card-border] .search-group,
+:root[data-card-border] .upcoming,
+:root[data-card-border] .mini-settings,
+:root[data-card-border] .admin-pages,
+:root[data-card-border] .check-group,
+:root[data-card-border] .contact,
+:root[data-card-border] .diff,
+:root[data-card-border] .dropdown,
+:root[data-card-border] .mc-card,
+:root[data-card-border] .tm-card,
+:root[data-card-border] .pass-folder,
+:root[data-card-border] .pinned-block,
+:root[data-card-border] .project-group,
+:root[data-card-border] .srv-card,
+:root[data-card-border] .tpl-section,
+:root[data-card-border] .content-hit,
+:root[data-card-border] .currency-row,
+:root[data-card-border] .incoming,
+:root[data-card-border] .new-project-btn,
+:root[data-card-border] .rem-card,
+:root[data-card-border] .rev-row,
+:root[data-card-border] .modal-content,
+:root[data-card-border] .card-glass,
+/* .section и .card в «стекло» не входят (там класс встречается и у
+   не-карточек), но визуально это карточки — рамку им ставим */
+:root[data-card-border] .section,
+:root[data-card-border] .card {
+  box-shadow: inset 0 0 0 var(--border-card-width, 0) var(--border-card-color, transparent);
+}
+
+:root[data-btn-border] .btn,
+:root[data-btn-border] .mini,
+:root[data-btn-border] button.primary,
+:root[data-btn-border] .btn-opt {
+  box-shadow: inset 0 0 0 var(--border-btn-width, 0) var(--border-btn-color, transparent);
+}

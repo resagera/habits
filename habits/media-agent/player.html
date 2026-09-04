@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Habits TV</title>
+<style>
+/* Экран приставки — 1920×1080 при dpr 2, то есть 960 CSS-пикселей: всё крупное.
+   Смотрят с дивана, а не с полуметра. */
+:root{--bg:#0d0f14;--panel:#171a21;--line:#272b34;--text:#e8eaed;--muted:#9aa0ac;--accent:#4c8dff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.45 system-ui,sans-serif;overflow:hidden}
+#gate{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:16px;z-index:50}
+#gate h1{font-size:34px;margin:0}
+#gate p{color:var(--muted);margin:0;max-width:34em;text-align:center}
+.big{font-size:22px;padding:14px 28px;border-radius:10px;border:0;background:var(--accent);color:#fff;cursor:pointer}
+/* Код читают с дивана и перепечатывают на телефоне — отсюда размер,
+   моноширинный шрифт и разбивка пополам. */
+#pair{margin-top:22px;text-align:center}
+#pair .lbl{color:var(--muted);font-size:14px;margin-bottom:6px}
+#code{font:700 44px/1.1 ui-monospace,"SF Mono",Menlo,Consolas,monospace;letter-spacing:6px}
+/* Код виден и после входа: подключить второй телефон можно во время просмотра,
+   не перезагружая страницу. Рядом с хлебными крошками, а не мелким шрифтом в
+   углу — с дивана угол не читается. */
+#codeline{margin-left:auto;flex:none;color:var(--accent);
+  font:700 15px/1 ui-monospace,Menlo,Consolas,monospace;letter-spacing:2px}
+#corner{position:fixed;right:10px;bottom:8px;z-index:20;color:var(--muted);font-size:12px;
+  font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:2px;opacity:.75}
+
+/* «Во весь экран» своими силами: Fullscreen API в вебвью приставки не
+   работает, а команда приходит с телефона — то есть без жеста на самом
+   телевизоре, когда браузер его и не разрешил бы. Обычный CSS делает то же
+   самое и слушается пульта. */
+#app.theater{grid-template-columns:1fr}
+#app.theater #left,#app.theater #now,#app.theater #bar,
+#app.theater #music,#app.theater #jobs{display:none}
+#app.theater video{position:fixed;inset:0;width:100vw;height:100vh;aspect-ratio:auto;
+  object-fit:contain;background:#000;z-index:30}
+#app.theater #corner{z-index:31}
+/* Видео — не меньше 60% ширины. minmax(0,…) обязателен: без него колонка
+   растягивается под самое длинное имя файла, и видео сжимается в полоску —
+   у элементов сетки min-width по умолчанию auto, а не 0. */
+#app{display:none;height:100vh;grid-template-columns:minmax(0,40%) minmax(0,60%)}
+#app.on{display:grid}
+#left{border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;min-width:0}
+#right{display:flex;flex-direction:column;min-height:0;min-width:0}
+#crumbs{padding:8px 10px;border-bottom:1px solid var(--line);color:var(--muted);font-size:14px;
+  display:flex;gap:10px;align-items:center}
+#path{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* «Назад» — обычная кнопка на экране: приставка работает в режиме курсора,
+   и аппаратной кнопки возврата у неё нет */
+#up{font:inherit;flex:none;padding:8px 12px;border-radius:8px;border:1px solid var(--line);
+  background:var(--panel);color:var(--text);cursor:pointer;outline:0}
+#up:focus{background:var(--accent);border-color:var(--accent);color:#fff}
+#mbar{display:flex;gap:6px;margin-top:6px}
+#mbar button{font:inherit;padding:8px 12px;border-radius:8px;border:1px solid var(--line);
+  background:var(--panel);color:var(--text);cursor:pointer;outline:0}
+#mbar button:focus{background:var(--accent);border-color:var(--accent);color:#fff}
+#list{flex:1;overflow-y:auto;padding:6px}
+.row{display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:8px;cursor:pointer;outline:0}
+.row:focus{background:var(--accent);color:#fff}
+.row .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .tag{font-size:12px;color:var(--muted);flex:none}
+.row:focus .tag{color:#dbe6ff}
+.warn{color:#ffc857}
+video{width:100%;background:#000;aspect-ratio:16/9}
+#now{padding:10px 14px;border-bottom:1px solid var(--line);font-size:14px}
+#now b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#bar{display:flex;flex-wrap:wrap;gap:6px;padding:10px 14px;border-top:1px solid var(--line)}
+#bar button{font:inherit;padding:10px 14px;border-radius:8px;border:1px solid var(--line);
+  background:var(--panel);color:var(--text);cursor:pointer;outline:0}
+#bar button:focus{background:var(--accent);border-color:var(--accent);color:#fff}
+#music,#jobs{padding:10px 14px;border-top:1px solid var(--line);font-size:14px;color:var(--muted)}
+#jobs{flex:1;overflow-y:auto}
+.job{margin:6px 0}
+.prog{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:3px}
+.prog i{display:block;height:100%;background:var(--accent)}
+.hint{color:var(--muted);font-size:13px;padding:8px 14px}
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <h1>Habits TV</h1>
+  <p>Нажмите «Начать» — браузер разрешит звук только после нажатия здесь.
+     Дальше можно управлять с телефона.</p>
+  <button class="big" id="start">Начать</button>
+  <div id="pair">
+    <div class="lbl">Код для пульта на телефоне</div>
+    <div id="code">…</div>
+  </div>
+</div>
+
+<div id="app">
+  <div id="left">
+    <div id="crumbs">
+      <button id="up">← Назад</button><span id="path">Библиотеки</span>
+      <span id="codeline">код: …</span>
+    </div>
+    <div id="list"></div>
+    <div class="hint">Кнопка «← Назад» — на уровень выше. Стрелки и OK тоже работают.</div>
+  </div>
+  <div id="right">
+    <video id="v" playsinline></video>
+    <div id="now"><b>Ничего не играет</b><span id="pos" class="tag"></span></div>
+    <div id="bar">
+      <button data-a="playpause">▶ / ⏸</button>
+      <button data-a="stop">⏹</button>
+      <button data-a="back">⏪ 30</button>
+      <button data-a="fwd">⏩ 30</button>
+      <button data-a="prev">⏮ серия</button>
+      <button data-a="next">⏭ серия</button>
+      <button data-a="full">⛶ Во весь экран</button>
+    </div>
+    <div id="music">
+      <div id="mtitle">Музыка: не играет</div>
+      <div id="mbar">
+        <button data-m="prev">⏮</button>
+        <button data-m="playpause">▶ / ⏸</button>
+        <button data-m="next">⏭</button>
+        <button data-m="stop">⏹</button>
+      </div>
+    </div>
+    <div id="jobs"></div>
+  </div>
+</div>
+
+<div id="corner"></div>
+<audio id="a"></audio>
+
+<script>
+const BASE = '{{BASE}}';
+const $ = id => document.getElementById(id);
+const v = $('v'), a = $('a');
+
+// Очереди раздельные: видео помнит своё место, даже когда играет музыка.
+// Ровно ради этого два элемента, а не один — пауза не выгружает видео.
+let queue = [], qi = -1;          // видеоочередь
+let musicQueue = [], mi = -1;     // музыкальная очередь
+let stack = [];                   // где мы в дереве папок
+let items = [];
+
+const fmt = t => {
+  if (!isFinite(t)) return '';
+  t = Math.round(t);
+  const h = Math.floor(t/3600), m = Math.floor(t%3600/60), s = t%60;
+  return (h ? h+':'+String(m).padStart(2,'0') : m) + ':' + String(s).padStart(2,'0');
+};
+
+$('start').onclick = () => {
+  // Разблокировка звука — это само нажатие: браузер запоминает, что
+  // пользователь взаимодействовал со страницей, и дальше пускает play()
+  // откуда угодно. Ничего проигрывать для этого НЕ НАДО — и нельзя:
+  // play() у элемента без источника не отвергается и не выполняется, он
+  // висит вечно, и обработчик с await на нём не доходит до конца.
+  $('gate').style.display = 'none';
+  $('app').classList.add('on');
+  openLibraries();
+  pollJobs();
+};
+
+// --- дерево ---
+
+async function openLibraries(){
+  const r = await fetch(BASE+'/api/libraries').then(r=>r.json());
+  stack = [];
+  items = r.libraries.map(l => ({id:l.id, name:l.title, is_dir:true, kind:l.kind}));
+  render('Библиотеки');
+}
+
+async function openDir(id, name){
+  const r = await fetch(BASE+'/api/browse?id='+encodeURIComponent(id)).then(r=>r.json());
+  if (r.error) { alert(r.error); return; }
+  stack.push({id, name});
+  items = r.items;
+  render(stack.map(s=>s.name).join(' / '));
+}
+
+function goUp(){
+  if (!stack.length) return;
+  stack.pop();
+  const parent = stack.pop();
+  if (!parent) openLibraries(); else openDir(parent.id, parent.name);
+}
+
+function verdictTag(it){
+  if (it.is_dir) return '';   // папку и так видно по значку в названии
+  if (!it.info) return '';
+  if (it.ready) return '<span class="tag">перекодирован</span>';
+  if (it.info.verdict === 'ok') return '<span class="tag">'+(it.info.height?it.info.height+'p':'')+'</span>';
+  const why = {remux:'нужен MP4', audio:'звук '+it.info.acodec, video:'видео '+it.info.vcodec};
+  return '<span class="tag warn">⚠ '+(why[it.info.verdict]||it.info.verdict)+' — нажмите, чтобы перекодировать</span>';
+}
+
+function render(title){
+  $('path').textContent = title;
+  $('up').style.visibility = stack.length ? 'visible' : 'hidden';
+  const list = $('list');
+  list.innerHTML = '';
+  items.forEach((it, idx) => {
+    const el = document.createElement('div');
+    el.className = 'row';
+    el.tabIndex = 0;
+    el.innerHTML = '<span class="nm">'+(it.is_dir?'📁 ':'')+escapeHtml(it.name)+'</span>'+verdictTag(it);
+    el.onkeydown = e => rowKeys(e, idx);
+    el.onclick = () => activate(idx);
+    list.appendChild(el);
+  });
+  const first = list.firstElementChild;
+  if (first) first.focus();
+}
+
+function escapeHtml(s){
+  return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+function rowKeys(e, idx){
+  const rows = [...$('list').children];
+  if (e.key === 'ArrowDown'){ e.preventDefault(); (rows[idx+1]||rows[0]).focus(); }
+  else if (e.key === 'ArrowUp'){ e.preventDefault(); (rows[idx-1]||rows[rows.length-1]).focus(); }
+  else if (e.key === 'Enter'){ e.preventDefault(); activate(idx); }
+  else if (e.key === 'Backspace' || e.key === 'Escape'){ e.preventDefault(); goUp(); }
+  else if (e.key === 'ArrowRight'){ e.preventDefault(); $('bar').firstElementChild.focus(); }
+}
+
+function playable(it){ return it.ready || (it.info && it.info.verdict === 'ok'); }
+
+// Есть ли в файле картинка. Файл без видеодорожки в <video> открывать нельзя:
+// получится чёрный прямоугольник вместо музыки — ровно то, чего быть не должно.
+function hasVideo(it){ return !!(it.info && it.info.vcodec); }
+
+/**
+ * Собрать очередь и включить.
+ *
+ * Очередь — вся папка, а не один файл: сериал смотрят подряд. Но только
+ * ОДНОРОДНАЯ: если в папке вперемешку серии и треки, за серией не должен
+ * начинаться трек. force === 'music' позволяет пустить фильм фоном как звук.
+ */
+function startFrom(list, it, force){
+  const all = list.filter(x => !x.is_dir && x.url && playable(x));
+  const asMusic = force === 'music' || !hasVideo(it);
+  let queueItems;
+  if (force === 'music') queueItems = all;              // фильм фоном как звук
+  else if (asMusic) queueItems = all.filter(x => !hasVideo(x));
+  else queueItems = all.filter(hasVideo);
+  const idx = Math.max(0, queueItems.findIndex(x => x.id === it.id));
+  if (!queueItems.length) return;
+  if (asMusic){ musicQueue = queueItems; mi = idx; playMusic(); }
+  else { queue = queueItems; qi = idx; playVideo(); }
+}
+
+function activate(idx){
+  const it = items[idx];
+  if (it.is_dir) { openDir(it.id, it.name); return; }
+  if (!it.info) return;
+  if (!playable(it)) { transcode(it); return; }
+  startFrom(items, it, '');
+}
+
+// --- воспроизведение ---
+
+function playVideo(){
+  const it = queue[qi];
+  if (!it) return;
+  a.pause();                    // видео и музыка одновременно не звучат
+  v.src = it.url;
+  v.play().catch(e => $('now').firstElementChild.textContent = 'Не запустилось: '+e.message);
+  $('now').firstElementChild.textContent = it.name + '  ('+(qi+1)+' из '+queue.length+')';
+  updateMediaSession();
+  updateMusicLine();
+}
+
+// Media Session отдаёт очередь системе: встроенный плеер приставки и её
+// собственные кнопки начинают листать серии сами. Без него «следующая серия»
+// живёт только внутри страницы, а во весь экран страница уже не видна.
+function updateMediaSession(){
+  if (!('mediaSession' in navigator)) return;
+  const it = queue[qi];
+  if (!it) return;
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: it.name, artist: $('path').textContent, album: 'Habits TV' });
+  } catch(e) {}
+  const set = (name, fn) => { try { navigator.mediaSession.setActionHandler(name, fn); } catch(e){} };
+  set('play', () => v.play());
+  set('pause', () => v.pause());
+  set('previoustrack', qi > 0 ? actions.prev : null);
+  set('nexttrack', qi + 1 < queue.length ? actions.next : null);
+  set('seekbackward', actions.back);
+  set('seekforward', actions.fwd);
+  set('seekto', d => { if (d.seekTime != null) v.currentTime = d.seekTime; });
+}
+
+function playMusic(){
+  const it = musicQueue[mi];
+  if (!it) return;
+  // видео НЕ трогаем — только пауза: место в серии сохраняется в самом
+  // элементе, и возврат к просмотру мгновенный
+  if (!v.paused) v.pause();
+  a.src = it.url;
+  a.play().catch(()=>{});
+  updateMusicLine();
+}
+
+function updateMusicLine(){
+  const it = musicQueue[mi];
+  $('mtitle').textContent = !it ? 'Музыка: не выбрана'
+    : (a.paused ? 'Музыка на паузе: ' : 'Музыка: ') + it.name;
+}
+
+// У музыки свои кнопки: видео при этом остаётся ровно там, где стояло —
+// его элемент не трогаем, поэтому возврат к просмотру мгновенный.
+const musicActions = {
+  playpause(){
+    if (!musicQueue.length) return;
+    if (a.paused){ if (!v.paused) v.pause(); a.play().catch(()=>{}); }
+    else a.pause();
+  },
+  stop(){ a.pause(); a.currentTime = 0; updateMusicLine(); },
+  prev(){ if (mi > 0){ mi--; playMusic(); } },
+  next(){ if (mi + 1 < musicQueue.length){ mi++; playMusic(); } },
+};
+
+v.addEventListener('timeupdate', () => {
+  $('pos').textContent = fmt(v.currentTime)+' / '+fmt(v.duration);
+});
+v.addEventListener('ended', () => { if (qi+1 < queue.length){ qi++; playVideo(); } });
+a.addEventListener('ended', () => { if (mi+1 < musicQueue.length){ mi++; playMusic(); } else updateMusicLine(); });
+a.addEventListener('play', updateMusicLine);
+a.addEventListener('pause', updateMusicLine);
+
+const actions = {
+  playpause(){ if (v.paused) v.play(); else v.pause(); },
+  stop(){ v.pause(); v.removeAttribute('src'); v.load(); $('now').firstElementChild.textContent='Ничего не играет'; },
+  back(){ v.currentTime = Math.max(0, v.currentTime-30); },
+  fwd(){ v.currentTime = Math.min(v.duration||1e9, v.currentTime+30); },
+  prev(){ if (qi>0){ qi--; playVideo(); } },
+  next(){ if (qi+1<queue.length){ qi++; playVideo(); } },
+  full(){
+    // Свой режим на CSS — основной: Fullscreen API в вебвью приставки не
+    // отрабатывает, а команда с пульта вообще не жест на телевизоре, и
+    // браузер её отклонил бы. Родной полный экран пробуем следом, «в подарок».
+    const on = $('app').classList.toggle('theater');
+    try {
+      if (on && v.requestFullscreen) v.requestFullscreen().catch(()=>{});
+      else if (!on && document.fullscreenElement) document.exitFullscreen();
+    } catch(e) {}
+  },
+};
+$('up').onclick = goUp;
+$('mbar').querySelectorAll('button').forEach(b => { b.onclick = () => musicActions[b.dataset.m](); });
+$('bar').querySelectorAll('button').forEach((b, i, all) => {
+  b.onclick = () => actions[b.dataset.a]();
+  b.onkeydown = e => {
+    if (e.key === 'ArrowRight'){ e.preventDefault(); (all[i+1]||all[0]).focus(); }
+    else if (e.key === 'ArrowLeft'){
+      e.preventDefault();
+      if (i === 0) { const r = $('list').firstElementChild; if (r) r.focus(); }
+      else all[i-1].focus();
+    }
+  };
+});
+document.addEventListener('keydown', e => {
+  if (e.key === ' '){ e.preventDefault(); actions.playpause(); }
+});
+
+// --- перекодирование ---
+
+// Приставка играет только MP4. MKV и AVI сюда и попадают: молча ничего не
+// делать нельзя — иначе нажатие выглядит как сломанное.
+async function transcode(it){
+  $('jobs').innerHTML = '<div class="job">Ставлю в очередь: '+escapeHtml(it.name)+'…</div>';
+  const r = await fetch(BASE+'/api/jobs', {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({id: it.id})}).then(r=>r.json()).catch(e=>({error:String(e)}));
+  if (r.error) $('jobs').innerHTML = '<div class="job warn">'+escapeHtml(r.error)+'</div>';
+  else pollJobs();
+}
+
+// --- связь с пультом ---
+//
+// Прод здесь только шина: он пересылает JSON и ничего о нём не знает. Списки
+// папок приставка берёт у своего агента по локальной сети и отдаёт пульту
+// сама, поэтому пути файлов и медиа через сервер не идут.
+
+const ROOM = '{{ROOM}}', HUB = '{{HUB}}';
+let hub = null, hubTimer = null;
+
+function hubConnect(){
+  if (!HUB || !ROOM) return;
+  try { hub = new WebSocket(HUB + '?room=' + encodeURIComponent(ROOM)); }
+  catch(e) { return hubRetry(); }
+  hub.onopen = () => { sendState(); sendJobs(); };
+  hub.onclose = hubRetry;
+  hub.onerror = () => { try { hub.close(); } catch(e){} };
+  hub.onmessage = async e => {
+    let m; try { m = JSON.parse(e.data); } catch(err) { return; }
+    if (m.t === 'code') return showCode(m.code);
+    await onRemote(m);
+  };
+}
+
+// Код показываем в двух местах: крупно на экране разблокировки и мелко в углу,
+// чтобы подключить второй телефон, не выходя из плеера.
+function showCode(code){
+  const pretty = code ? code.slice(0,4) + ' ' + code.slice(4) : '…';
+  $('code').textContent = pretty;
+  $('codeline').textContent = 'код: ' + pretty;
+  $('corner').textContent = 'код: ' + pretty;
+}
+// Приставка стоит включённой сутками, а вайфай и прод перезапускаются:
+// без переподключения пульт замолкал бы навсегда после первой же икоты.
+function hubRetry(){
+  clearTimeout(hubTimer);
+  hubTimer = setTimeout(hubConnect, 4000);
+}
+function hubSend(obj){
+  if (hub && hub.readyState === 1) hub.send(JSON.stringify(obj));
+}
+
+async function onRemote(m){
+  switch (m.t){
+    case 'hello': sendState(); sendJobs(); break;
+    case 'browse': {
+      // пульт листает библиотеку САМ, экран приставки при этом не трогаем:
+      // выбирать следующую серию, не сбивая текущую картинку, — обычное дело
+      const url = m.id ? BASE+'/api/browse?id='+encodeURIComponent(m.id) : BASE+'/api/libraries';
+      try {
+        const r = await fetch(url).then(r=>r.json());
+        const list = m.id ? r.items : (r.libraries||[]).map(l=>({id:l.id,name:l.title,is_dir:true}));
+        hubSend({t:'items', id:m.id||'', items:list||[], error:r.error||''});
+      } catch(err){ hubSend({t:'items', id:m.id||'', items:[], error:String(err)}); }
+      break;
+    }
+    case 'open': {
+      // очередь собирается из того, что прислал пульт: он видит ту же папку.
+      // Куда играть, решает СОДЕРЖИМОЕ файла, а не пожелание пульта: трек без
+      // видеодорожки в видеоплеере — это чёрный экран вместо музыки.
+      const list = (m.items||[]).filter(x=>!x.is_dir && x.url);
+      const it = list.find(x=>x.id===m.id);
+      if (!it) break;
+      startFrom(list, it, m.as === 'music' ? 'music' : '');
+      sendState();
+      break;
+    }
+    case 'cmd': if (actions[m.a]) { actions[m.a](); sendState(); } break;
+    case 'mcmd': if (musicActions[m.a]) { musicActions[m.a](); sendState(); } break;
+    case 'seek': if (isFinite(m.to)) { v.currentTime = m.to; sendState(); } break;
+    case 'volume': if (isFinite(m.value)) { v.volume = a.volume = Math.min(1, Math.max(0, m.value)); sendState(); } break;
+    case 'transcode': if (m.id) { await transcode({id:m.id, name:m.name||''}); sendJobs(); } break;
+  }
+}
+
+function sendState(){
+  const it = queue[qi], mit = musicQueue[mi];
+  hubSend({t:'state',
+    video: it ? {name: it.name, index: qi+1, total: queue.length,
+                 paused: v.paused, time: v.currentTime||0, duration: v.duration||0} : null,
+    music: mit ? {name: mit.name, index: mi+1, total: musicQueue.length,
+                  paused: a.paused} : null,
+    volume: v.volume});
+}
+function sendJobs(){
+  fetch(BASE+'/api/jobs').then(r=>r.json())
+    .then(r => hubSend({t:'jobs', jobs: r.jobs||[]})).catch(()=>{});
+}
+// раз в секунду во время игры — пульту нужна ползущая позиция, но слать
+// состояние на каждый timeupdate (4 раза в секунду) незачем
+setInterval(() => { if (!v.paused || !a.paused) sendState(); }, 1000);
+v.addEventListener('play', sendState);
+v.addEventListener('pause', sendState);
+a.addEventListener('play', sendState);
+a.addEventListener('pause', sendState);
+hubConnect();
+
+let jobTimer = null;
+async function pollJobs(){
+  clearTimeout(jobTimer);
+  let active = false;
+  try{
+    const r = await fetch(BASE+'/api/jobs').then(r=>r.json());
+    const names = {queued:'в очереди', running:'идёт', done:'готово', failed:'ошибка', stopped:'остановлено'};
+    $('jobs').innerHTML = (r.jobs||[]).slice(0,6).map(j => {
+      if (j.status==='queued'||j.status==='running') active = true;
+      return '<div class="job">'+escapeHtml(j.name)+' — '+names[j.status]+
+        (j.status==='running' ? ' '+j.percent+'% ('+(j.speed||'')+')' : '')+
+        (j.error ? ' <span class="warn">'+escapeHtml(j.error)+'</span>' : '')+
+        (j.status==='running' ? '<div class="prog"><i style="width:'+j.percent+'%"></i></div>' : '')+
+        '</div>';
+    }).join('') || '';
+  }catch(e){}
+  // пока что-то считается — раз в 2 секунды, потом раз в 15: опрашивать
+  // впустую незачем, а без опроса прогресс не обновится
+  jobTimer = setTimeout(pollJobs, active ? 2000 : 15000);
+}
+</script>
+</body>
+</html>

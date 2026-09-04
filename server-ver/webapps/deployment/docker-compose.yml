@@ -1,0 +1,20 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: postgres-ltree
+    environment:
+      POSTGRES_DB: habits
+      POSTGRES_USER: habits
+      POSTGRES_PASSWORD: habits5432
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
