@@ -1,0 +1,64 @@
+# Продовый стек streaks/habits: /opt/habits на сервере.
+# Изолирован от стека стриминга (home-stream); HTTP-трафик приходит от Caddy
+# стриминга через общую docker-сеть. Наружу публикуется только порт 25 —
+# приёмник почты, для него проксирование не подходит.
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: streaks
+      POSTGRES_USER: streaks
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U streaks -d streaks"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      ADDR: :8081
+      DATABASE_URL: postgres://streaks:${POSTGRES_PASSWORD}@db:5432/streaks?sslmode=disable
+      BOT_TOKEN: ${BOT_TOKEN:?set BOT_TOKEN in .env}
+      STATIC_DIR: /app/public
+      DATA_DIR: /app/data
+      ADMIN_IDS: ${ADMIN_IDS:-180564250}
+      # приёмник почты слушает непривилегированный порт: контейнер работает
+      # не от root, а порт 25 снаружи пробрасывает сюда docker
+      SMTP_ADDR: :2525
+      MAIL_HOSTNAME: ${MAIL_HOSTNAME:-mail.resager.ru}
+      MAIL_DOMAINS: ${MAIL_DOMAINS:-resager.ru}
+    ports:
+      # единственный публикуемый порт стека: HTTP идёт через Caddy стриминга,
+      # а SMTP обязан быть на 25 — почтовые серверы стучатся только туда
+      - "25:2525"
+    volumes:
+      - appdata:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      default: {}
+      proxy:
+        # под этим именем контейнер видит Caddy стриминга
+        aliases: [habits-backend]
+
+networks:
+  proxy:
+    external: true
+    name: home-stream_default
+
+volumes:
+  pgdata:
+  appdata:
