@@ -1,0 +1,3983 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Habits TV</title>
+<style>
+/* Экран приставки — 1920×1080 при dpr 2, то есть 960 CSS-пикселей: всё крупное.
+   Смотрят с дивана, а не с полуметра. */
+:root{--bg:#0d0f14;--panel:#171a21;--line:#272b34;--text:#e8eaed;--muted:#9aa0ac;--accent:#4c8dff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.45 system-ui,sans-serif;overflow:hidden}
+button{font:inherit}
+#gate{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:16px;z-index:50}
+#gate h1{font-size:34px;margin:0}
+#gate p{color:var(--muted);margin:0;max-width:34em;text-align:center}
+.big{font-size:22px;padding:14px 28px;border-radius:10px;border:0;background:var(--accent);color:#fff;cursor:pointer}
+/* Код читают с дивана и перепечатывают на телефоне — отсюда размер,
+   моноширинный шрифт и разбивка пополам. */
+#pair{margin-top:22px;text-align:center}
+#pair .lbl{color:var(--muted);font-size:14px;margin-bottom:6px}
+#code{font:700 44px/1.1 ui-monospace,"SF Mono",Menlo,Consolas,monospace;letter-spacing:6px}
+#corner{position:fixed;right:10px;bottom:8px;z-index:20;color:var(--muted);font-size:12px;
+  font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:2px;opacity:.75}
+
+/* Кнопки — одним стилем везде: фокус заметен с дивана */
+.btn{padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel);
+  color:var(--text);cursor:pointer;outline:0;flex:none}
+.btn:focus,.btn.on:focus{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.on{border-color:var(--accent);color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:focus{box-shadow:0 0 0 3px #fff}
+
+/* --- каркас --- */
+#app{display:none;height:100vh;flex-direction:column}
+#app.on{display:flex}
+/* Шапка общая для обоих режимов: переключатель стоит там, где раньше было
+   слово «Библиотеки», и доступен из любого экрана. */
+#head{display:flex;gap:10px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);
+  color:var(--muted);font-size:14px;flex:none}
+#modes{display:flex;gap:4px;flex:none}
+#path{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+/* Код виден и после входа: подключить второй телефон можно во время просмотра,
+   не перезагружая страницу. */
+#codeline{margin-left:auto;flex:none;color:var(--accent);
+  font:700 15px/1 ui-monospace,Menlo,Consolas,monospace;letter-spacing:2px}
+/* Видео — не меньше 60% ширины. minmax(0,…) обязателен: без него колонка
+   растягивается под самое длинное имя файла, и видео сжимается в полоску —
+   у элементов сетки min-width по умолчанию auto, а не 0. */
+#body{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,40%) minmax(0,60%)}
+#left{border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;min-width:0}
+#right{display:flex;flex-direction:column;min-height:0;min-width:0}
+#visual{display:none;min-height:0;overflow-y:auto;padding:10px 14px 60px}
+
+/* Визуальный режим: каталог во всю ширину, плеер появляется только когда
+   выбрали, что смотреть — пустой чёрный прямоугольник на главной ни к чему. */
+#app.visual #body{grid-template-columns:minmax(0,1fr)}
+#app.visual #left,#app.visual #right{display:none}
+#app.visual #visual{display:block}
+#app.visual.player #visual{display:none}
+#app.visual.player #right{display:flex}
+#app.visual.player video{flex:1;min-height:0;aspect-ratio:auto;height:auto}
+
+/* «Во весь экран» своими силами: Fullscreen API в вебвью приставки не
+   работает, а команда приходит с телефона — то есть без жеста на самом
+   телевизоре, когда браузер его и не разрешил бы. Обычный CSS делает то же
+   самое и слушается пульта. */
+#app.theater #head,#app.theater #left,#app.theater #now,#app.theater #bar,
+#app.theater #music,#app.theater #jobs,#app.theater #visual{display:none!important}
+#app.theater #right{display:flex!important}
+#app.theater video{position:fixed;inset:0;width:100vw;height:100vh;aspect-ratio:auto;
+  object-fit:contain;background:#000;z-index:30}
+#app.theater #corner{z-index:31}
+
+/* --- файловый режим --- */
+#mbar{display:flex;gap:6px;margin-top:6px}
+#list{flex:1;overflow-y:auto;padding:6px}
+.row{display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:8px;cursor:pointer;outline:0}
+.row:focus{background:var(--accent);color:#fff}
+.row .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tag{font-size:12px;color:var(--muted);flex:none}
+.row:focus .tag{color:#dbe6ff}
+.warn{color:#ffc857}
+video{width:100%;background:#000;aspect-ratio:16/9}
+#now{padding:10px 14px;border-bottom:1px solid var(--line);font-size:14px}
+#now b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#bar{display:flex;flex-wrap:wrap;gap:6px;padding:10px 14px;border-top:1px solid var(--line)}
+#music,#jobs{padding:10px 14px;border-top:1px solid var(--line);font-size:14px;color:var(--muted)}
+#jobs{flex:1;overflow-y:auto}
+#app.visual.player #jobs{flex:none;max-height:20vh}
+.job{margin:6px 0}
+.prog{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:3px}
+.prog i{display:block;height:100%;background:var(--accent)}
+.hint{color:var(--muted);font-size:13px;padding:8px 14px}
+
+/* --- визуальный режим --- */
+.sec{margin:6px 0 18px}
+.sec-head{display:flex;align-items:center;gap:8px;margin:0 0 8px}
+.sec-head h2{font-size:20px;margin:0;margin-right:auto}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:14px}
+.tile{display:flex;flex-direction:column;gap:6px;min-width:0}
+/* Постер — сама кнопка: OK на нём открывает фильм или сериал */
+.poster{position:relative;aspect-ratio:2/3;border-radius:10px;overflow:hidden;background:var(--panel);
+  border:2px solid transparent;cursor:pointer;outline:0;display:flex;align-items:center;justify-content:center}
+.poster:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent);transform:scale(1.03)}
+.poster img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.poster .ph{font-size:42px;opacity:.6}
+.poster .badge{position:absolute;right:6px;top:6px;background:#000c;color:#fff;font-size:12px;
+  padding:2px 6px;border-radius:6px}
+.poster.square{aspect-ratio:1/1;background:linear-gradient(135deg,#2a3350,#1b2030)}
+.tname{font-size:14px;line-height:1.25;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;
+  -webkit-box-orient:vertical}
+.tile .btn{font-size:13px;padding:5px 8px}
+.tbtns{display:flex;gap:4px;flex-wrap:wrap}
+.row .btn.mini{font-size:13px;padding:3px 9px;flex:none}
+/* карточка «Инфо» */
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:13px;padding:3px 10px;border-radius:12px;background:#ffffff1a;border:1px solid var(--line)}
+.ratings{display:flex;flex-wrap:wrap;gap:14px;font-size:15px}
+.ratings b{color:#ffd166}
+.idesc{line-height:1.5;max-height:34vh;overflow-y:auto;color:#d5d8de}
+.iactors{color:var(--muted);font-size:14px}
+/* полоска «сколько посмотрено» по низу постера */
+.poster .bar{position:absolute;left:0;right:0;bottom:0;height:5px;background:#000a}
+.poster .bar i{display:block;height:100%;background:var(--accent)}
+.tsub{font-size:12px;color:var(--muted);margin-top:-4px}
+.empty{color:var(--muted);font-size:14px}
+/* экран сериала или музыкальной папки */
+.detail{display:flex;gap:18px;align-items:flex-start}
+.detail .poster{width:180px;flex:none;cursor:default}
+.detail .poster:focus{transform:none}
+.dinfo{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
+.dinfo h2{margin:0;font-size:26px}
+.dinfo .sub{color:var(--muted)}
+.actions,.seasons{display:flex;flex-wrap:wrap;gap:6px}
+.eps{margin-top:6px}
+#vmusic{position:fixed;left:0;right:0;bottom:0;display:none;gap:8px;align-items:center;
+  padding:8px 14px;background:var(--panel);border-top:1px solid var(--line);z-index:10}
+/* прогресс трека — тонкой полоской по верхнему краю панели, видно всегда */
+.mprog{position:absolute;left:0;top:0;height:3px;background:var(--accent);width:0;transition:width .25s linear}
+#music .mline{position:relative;height:3px;background:var(--line);border-radius:2px;margin:6px 0 2px}
+#music .mline i{display:block;height:100%;background:var(--accent);width:0;border-radius:2px;transition:width .25s linear}
+#vmusic .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+#app.visual:not(.player) #vmusic.on{display:flex}
+/* значок приложения для Android TV в правом краю шапки */
+.apk{flex:none;display:flex;align-items:center;color:#3ddc84;padding:4px;border-radius:6px;outline:0}
+.apk:focus{background:var(--accent);color:#fff}
+.apk[hidden],#appSettings[hidden]{display:none}
+/* обновить и админка — значками рядом со значком приложения */
+.hicon{flex:none;display:flex;align-items:center;justify-content:center;color:var(--muted);padding:4px;
+  border-radius:6px;outline:0;background:none;border:0;cursor:pointer}
+.hicon:focus,.hicon:hover{background:var(--accent);color:#fff}
+.hicon.spin svg{animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* выбор музыки прямо в панели плеера */
+#mpick{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+#mpick[hidden]{display:none}
+#mpick .lbl{width:100%;font-size:13px}
+
+/* --- админка --- */
+#admin{position:fixed;inset:0;z-index:45;background:var(--bg);display:flex;flex-direction:column}
+#admin[hidden]{display:none}
+.ahead{display:flex;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);flex:none;flex-wrap:wrap}
+.ahead h2{margin:0 8px 0 0;font-size:20px}
+.atabs{display:flex;gap:4px;margin-left:auto}
+#adstatus{padding:6px 14px;font-size:14px;min-height:0;flex:none}
+#adstatus:empty{display:none}
+#adstatus.err{color:#ff8a80}
+#adstatus.ok{color:#7ee2a8}
+#adbody{flex:1;overflow-y:auto;padding:8px 14px 40px}
+#adbody h3{font-size:17px;margin:16px 0 6px}
+.arow{display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:8px;border:1px solid var(--line);margin:4px 0}
+.ainfo{flex:1;min-width:0}
+.ainfo b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.apath{display:block;color:var(--muted);font-size:12px;font-family:ui-monospace,Menlo,Consolas,monospace;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.asize{color:var(--muted);font-size:13px;flex:none;text-align:right}
+.arow .btn{font-size:13px;padding:5px 9px}
+.acard{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.acard .ainfo span{color:var(--muted);font-size:13px}
+.abar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:4px;max-width:320px}
+.abar i{display:block;height:100%;background:var(--accent)}
+.sbars{display:flex;align-items:flex-end;gap:6px;height:160px;margin:8px 0 4px;padding:0 4px;border-bottom:1px solid var(--line)}
+.sbar{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;min-width:0}
+.sbar i{display:block;width:100%;max-width:46px;background:var(--accent);border-radius:4px 4px 0 0;min-height:2px}
+.sbar span{font-size:11px;color:var(--muted);margin-top:3px;white-space:nowrap}
+.sbar em{font-size:11px;font-style:normal;color:var(--muted);margin-bottom:2px}
+.agrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:8px}
+.agrid .pth{width:100%;height:auto;aspect-ratio:3/2}
+.mkvid{display:block;width:100%;max-width:calc(42vh * 16 / 9);height:42vh;object-fit:contain;
+  background:#000;border-radius:8px;margin:8px auto}
+.mkrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:8px 0}
+.mkrow .lbl{width:100%;color:var(--muted);font-size:13px}
+.mkpos{font:700 19px/1 ui-monospace,Menlo,Consolas,monospace;padding:0 6px}
+.abg{width:240px;aspect-ratio:16/9;border-radius:8px;background:#000 center/cover no-repeat;border:1px solid var(--line);flex:none}
+/* PIN: кнопки-цифры — пульт ходит по ним стрелками */
+.pin{display:flex;flex-direction:column;align-items:center;gap:14px;margin-top:30px}
+#pindots{font:700 34px/1 ui-monospace,Menlo,Consolas,monospace;letter-spacing:12px;min-height:40px}
+.pinpad{display:grid;grid-template-columns:repeat(3,72px);gap:8px}
+.pinpad .btn{font-size:22px;padding:12px 0}
+/* своё окно подтверждения и ввода: системные диалоги в WebView на ТВ
+   блокируют страницу и не всегда управляются пультом */
+#amodal{position:fixed;inset:0;z-index:60;background:#000a;display:flex;align-items:center;justify-content:center}
+#amodal[hidden]{display:none}
+.mbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;width:min(560px,92vw);
+  display:flex;flex-direction:column;gap:12px}
+.mbox p{margin:0;white-space:pre-line}
+.mbox input{font:inherit;font-size:18px;padding:8px 10px;border-radius:8px;border:2px solid var(--line);
+  background:var(--bg);color:var(--text);outline:0}
+.mbox input:focus{border-color:var(--accent)}
+.mbtns{display:flex;gap:8px;justify-content:flex-end}
+.btn.danger{border-color:#e5534b;color:#ff8a80}
+.btn.danger:focus{background:#e5534b;color:#fff}
+.poster.wide{aspect-ratio:16/9;background:linear-gradient(135deg,#2a3350,#1b2030)}
+.poster.photo{aspect-ratio:3/2;background:linear-gradient(135deg,#2a3350,#1b2030)}
+
+/* --- фото: папка --- */
+/* Экран папки: снимок на большую часть экрана, под ним полоса превью и
+   вложенные папки. Стрелки ходят по полосе, снимок сверху меняется на ходу. */
+#visual.photos{overflow:hidden;padding:8px 10px}
+#app.music-on #visual.photos{padding-bottom:64px}
+.pv{height:100%;display:flex;flex-direction:column;gap:8px;min-height:0}
+.pv-main{position:relative;flex:1;min-height:0;border-radius:10px;background:#000;outline:0;
+  border:2px solid transparent;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.pv-main:focus{border-color:var(--accent)}
+.pv-main img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.pv-main .empty{padding:20px;text-align:center}
+.pv-cap{position:absolute;left:8px;bottom:8px;background:#000b;color:#fff;font-size:13px;
+  padding:3px 8px;border-radius:6px;max-width:80%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pv-strip{flex:none;display:flex;gap:8px;overflow-x:auto;overflow-y:hidden;padding:4px 2px 6px;scrollbar-width:none}
+.pv-strip::-webkit-scrollbar{display:none}
+.pth{position:relative;flex:none;width:132px;height:88px;border-radius:8px;overflow:hidden;padding:0;
+  border:2px solid transparent;background:var(--panel);cursor:pointer;outline:0}
+.pth img{width:100%;height:100%;object-fit:cover;display:block}
+.pth:focus,.pth.cur{border-color:var(--accent)}
+.pth:focus{box-shadow:0 0 0 2px var(--accent)}
+.pth.dir{background:linear-gradient(135deg,#2a3350,#1b2030)}
+.pth.dir img{opacity:.55}
+.pth .dn{position:absolute;left:0;right:0;bottom:0;padding:3px 6px;background:#000c;color:#fff;font-size:12px;
+  text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pth .dic{position:absolute;left:6px;top:4px;font-size:18px}
+/* весь экран: только снимок, стрелки листают, «Назад» возвращает к полосе */
+/* фон страницы (из админки) и размытый постер на экране сериала: слой под
+   всем, картинка размывается и притемняется стилями — менять можно на ходу */
+#bg{position:fixed;inset:-40px;z-index:0;background:#000 center/cover no-repeat;opacity:0;transition:opacity .5s}
+#bg.on{opacity:1}
+#bgdim{position:fixed;inset:0;z-index:0;background:#000;opacity:0;pointer-events:none;transition:opacity .5s}
+#app{position:relative;z-index:1}
+/* пропустить заставку / следующая серия — поверх видео, и во весь экран тоже */
+#skipbox{position:fixed;right:24px;bottom:70px;z-index:34;display:flex;gap:8px;align-items:center}
+#skipbox[hidden]{display:none}
+#skipbox .btn{font-size:18px;padding:10px 16px;box-shadow:0 4px 16px #000a}
+#markpanel{padding:8px 14px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px}
+#markpanel[hidden]{display:none}
+#markpanel .mrow{width:100%;color:var(--muted)}
+#app.theater #markpanel{display:none}
+/* играющий трек в списке — видно, где ты, не глядя на нижнюю панель */
+.row.cur{border:1px solid var(--accent)}
+.row.cur .nm{color:var(--accent)}
+.row .eq{flex:none;color:var(--accent)}
+/* очередь поверх всего: список с текущим треком и полоской прогресса */
+#qlist{position:fixed;left:0;right:0;bottom:0;top:12vh;z-index:46;background:var(--panel);
+  border-top:1px solid var(--line);display:flex;flex-direction:column}
+#qlist[hidden]{display:none}
+.qhead{display:flex;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);flex:none}
+.qhead b{font-size:18px}
+.qhead .sub{color:var(--muted);font-size:14px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#qbody{flex:1;overflow-y:auto;padding:6px}
+.qrow{display:flex;gap:10px;align-items:center;width:100%;text-align:left;padding:10px 12px;border-radius:8px;
+  border:1px solid transparent;background:none;color:var(--text);cursor:pointer;outline:0;font:inherit}
+.qrow:focus{background:var(--accent);color:#fff}
+.qrow.cur{border-color:var(--accent);color:var(--accent)}
+.qrow.cur:focus{color:#fff}
+.qrow .n{flex:none;color:var(--muted);min-width:2.2em}
+.qrow:focus .n{color:#dbe6ff}
+.qrow .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qfoot{flex:none;padding:10px 14px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;font-size:14px}
+.qfoot .bar{flex:1;height:4px;background:var(--line);border-radius:2px;overflow:hidden}
+.qfoot .bar i{display:block;height:100%;background:var(--accent);width:0}
+/* «Отправить на ТВ»: фото или ролик с телефона поверх всего */
+#cast{position:fixed;inset:0;z-index:48;background:#000;display:none}
+#cast.on{display:block}
+#cast img,#cast video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+#cast .cap{position:absolute;left:12px;bottom:10px;color:#fff;font-size:14px;background:#0009;padding:4px 10px;border-radius:6px}
+/* подсказка поверх видео во весь экран: куда перемотали, пауза или ход */
+#osd{position:fixed;left:50%;top:6%;transform:translateX(-50%);z-index:32;background:#000b;color:#fff;
+  font-size:20px;padding:6px 16px;border-radius:10px;pointer-events:none;opacity:0;transition:opacity .3s}
+#osd.on{opacity:1}
+/* режимы музыки: выбранный подсвечен так же, как режим плеера в шапке */
+.btn.mmode{min-width:2.4em}
+#pfull{position:fixed;inset:0;background:#000;z-index:40;display:none}
+#pfull.on{display:block}
+#pfull img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity .7s}
+#pfull video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;display:none}
+#pfull.vid video{display:block}
+#pfull.vid img{display:none}
+/* ролик в полосе и на большом снимке — значок ▶ поверх кадра */
+.pth .vb,.pv-main .vb{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000a;color:#fff;
+  border-radius:50%;width:38px;height:38px;display:flex;align-items:center;justify-content:center;font-size:18px;pointer-events:none}
+.pv-main .vb{width:84px;height:84px;font-size:40px}
+.pth.ss{width:auto;padding:0 14px;color:var(--text);font-size:15px;background:var(--panel)}
+.ssopt{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.ssopt .lbl{width:100%;color:var(--muted);font-size:13px;margin-top:4px}
+#pfull .cap{position:absolute;left:12px;bottom:10px;color:#fff;font-size:13px;background:#0008;
+  padding:3px 8px;border-radius:6px;opacity:.8}
+#pfull .nav{position:absolute;top:0;bottom:0;width:22%;background:none;border:0;color:#fff8;font-size:40px;cursor:pointer}
+#pfull .nav.l{left:0;text-align:left;padding-left:14px}
+#pfull .nav.r{right:0;text-align:right;padding-right:14px}
+#pfull .x{position:absolute;right:10px;top:8px;background:#0008;border:0;color:#fff;font-size:22px;
+  border-radius:8px;padding:4px 12px;cursor:pointer}
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <h1>Habits TV</h1>
+  <p>Нажмите «Начать» — браузер разрешит звук только после нажатия здесь.
+     Дальше можно управлять с телефона.</p>
+  <button class="big" id="start">Начать</button>
+  <div id="pair">
+    <div class="lbl">Код для пульта на телефоне</div>
+    <div id="code">…</div>
+  </div>
+</div>
+
+<div id="bg"></div><div id="bgdim"></div>
+<div id="app">
+  <div id="head">
+    <!-- «Назад» — обычная кнопка на экране: приставка работает в режиме
+         курсора, и аппаратной кнопки возврата у неё нет -->
+    <button class="btn" id="up">← Назад</button>
+    <div id="modes">
+      <button class="btn" data-mode="visual">🎬 Визуальный</button>
+      <button class="btn" data-mode="files">📁 Файлы</button>
+    </div>
+    <span id="path">Библиотеки</span>
+    <span id="codeline">код: …</span>
+    <!-- в приложении: смена адреса медиатеки -->
+    <button class="btn" id="appSettings" hidden>🌐 Адрес</button>
+    <button class="hicon" id="refresh" title="Обновить медиатеку">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+    </button>
+    <button class="hicon" id="adminBtn" title="Админка: названия, удаление, обслуживание">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.48.48 0 0 0-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.48.48 0 0 0-.59.22L2.74 8.87a.47.47 0 0 0 .12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.47.47 0 0 0-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>
+    </button>
+    <!-- в браузере: скачать приложение (показывается, только если APK выложен) -->
+    <a class="apk" id="apk" hidden title="Приложение для Android TV — пульт стрелками вместо курсора">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M17.6 9.48l1.84-3.18a.38.38 0 0 0-.66-.38l-1.87 3.23A11.4 11.4 0 0 0 12 8.2c-1.77 0-3.43.4-4.91 1.05L5.22 6.02a.38.38 0 1 0-.66.38L6.4 9.48A10.8 10.8 0 0 0 1 18h22a10.8 10.8 0 0 0-5.4-8.52zM7 15.25a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5zm10 0a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5z"/></svg>
+    </a>
+  </div>
+  <div id="body">
+    <div id="left">
+      <div id="list"></div>
+      <div class="hint">Кнопка «← Назад» — на уровень выше. Стрелки и OK тоже работают.</div>
+    </div>
+    <div id="right">
+      <video id="v" playsinline></video>
+      <div id="now"><b>Ничего не играет</b><span id="pos" class="tag"></span></div>
+      <div id="bar">
+        <button class="btn" data-a="playpause">▶ / ⏸</button>
+        <button class="btn" data-a="stop">⏹</button>
+        <button class="btn" data-a="back">⏪ 30</button>
+        <button class="btn" data-a="fwd">⏩ 30</button>
+        <button class="btn" data-a="prev">⏮ серия</button>
+        <button class="btn" data-a="next">⏭ серия</button>
+        <button class="btn" data-a="full">⛶ Во весь экран</button>
+        <button class="btn" data-a="skiptoggle" id="skiptoggle" hidden>⏭ Пропуск: вкл</button>
+        <button class="btn" data-a="musicpause" id="musicpause">☐ Музыка на паузе</button>
+        <button class="btn" data-a="marks">✂ Заставка и титры</button>
+        <button class="btn" data-a="sleep" id="sleepbtn">🌙 Сон: выкл</button>
+      </div>
+      <div id="markpanel" hidden></div>
+      <div id="music">
+        <div id="mtitle">Музыка: не играет</div>
+        <div class="mline"><i id="mprog"></i></div>
+        <div id="mbar">
+          <button class="btn" data-m="prev">⏮</button>
+          <button class="btn" data-m="playpause">▶ / ⏸</button>
+          <button class="btn" data-m="next">⏭</button>
+          <button class="btn" data-m="stop">⏹</button>
+          <button class="btn mmode" data-m="repeat"></button>
+          <button class="btn mmode" data-m="shuffle"></button>
+          <button class="btn mmode" data-m="fade"></button>
+          <button class="btn" data-m="queue">☰ Плейлист</button>
+          <button class="btn" data-m="pick">🎵 Выбрать</button>
+        </div>
+        <div id="mpick" hidden></div>
+      </div>
+      <div id="jobs"></div>
+    </div>
+    <div id="visual"></div>
+  </div>
+  <div id="vmusic">
+    <i class="mprog" id="vmprog"></i>
+    <span class="t" id="vmtitle"></span>
+    <button class="btn" data-m="prev">⏮</button>
+    <button class="btn" data-m="playpause">▶ / ⏸</button>
+    <button class="btn" data-m="next">⏭</button>
+    <button class="btn" data-m="stop">⏹</button>
+    <button class="btn mmode" data-m="repeat"></button>
+    <button class="btn mmode" data-m="shuffle"></button>
+    <button class="btn mmode" data-m="fade"></button>
+    <button class="btn" data-m="queue">☰ Плейлист</button>
+  </div>
+</div>
+
+<div id="qlist" hidden>
+  <div class="qhead"><b>Плейлист</b><span class="sub" id="qsub"></span>
+    <button class="btn" data-q="playpause">▶ / ⏸</button>
+    <button class="btn" data-q="close">✕ Закрыть</button></div>
+  <div id="qbody"></div>
+  <div class="qfoot"><span id="qnow">0:00</span><span class="bar"><i id="qfill"></i></span>
+    <span id="qleft">0:00</span><span id="qpct" class="tag"></span></div>
+</div>
+<div id="osd"></div>
+<div id="cast"><img id="castimg" alt="" hidden><video id="castvid" playsinline hidden></video><span class="cap" id="castcap"></span></div>
+<div id="skipbox" hidden><button class="btn primary" id="skipbtn"></button><button class="btn" id="skipno">✕ Остаться</button></div>
+
+<div id="admin" hidden>
+  <div class="ahead">
+    <button class="btn" data-ad="back">← Назад</button>
+    <h2>Админка</h2>
+    <span id="adpath" class="tag"></span>
+    <div class="atabs">
+      <button class="btn" data-adtab="lib">Медиатека</button>
+      <button class="btn" data-adtab="trash">Корзина</button>
+      <button class="btn" data-adtab="looks">Оформление</button>
+      <button class="btn" data-adtab="build">Собрать</button>
+      <button class="btn" data-adtab="stats">Статистика</button>
+      <button class="btn" data-adtab="service">Обслуживание</button>
+    </div>
+  </div>
+  <div id="adstatus"></div>
+  <video id="advid" class="mkvid" playsinline hidden></video>
+  <div id="adbody"></div>
+  <input type="file" id="adfile" accept="image/jpeg,image/png" hidden>
+  <input type="file" id="adzip" accept=".zip,application/zip" hidden>
+  <input type="file" id="adfiles" multiple hidden>
+  <audio id="prehear"></audio>
+</div>
+<div id="amodal" hidden><div class="mbox" id="mbox"></div></div>
+
+<div id="pfull">
+  <img id="pfimg" alt=""><img id="pfimg2" alt="">
+  <video id="pfvid" playsinline></video>
+  <button class="nav l" data-pf="prev" tabindex="-1">‹</button>
+  <button class="nav r" data-pf="next" tabindex="-1">›</button>
+  <button class="x" data-pf="close" tabindex="-1">✕</button>
+  <span class="cap" id="pfcap"></span>
+</div>
+
+<div id="corner"></div>
+<audio id="a"></audio><audio id="a2"></audio>
+
+<script>
+const BASE = '{{BASE}}';
+const $ = id => document.getElementById(id);
+const v = $('v');
+// Два элемента для музыки: при плавном переходе конец одного трека и начало
+// следующего звучат вместе. a — тот, что играет сейчас; роли меняются.
+const audios = [$('a'), $('a2')];
+let a = audios[0];
+// события музыки слушаем у обоих элементов, но реагируем только на текущий
+function onAudio(type, fn){ audios.forEach(el => el.addEventListener(type, e => { if (e.target === a) fn(e); })); }
+
+// Очереди раздельные: видео помнит своё место, даже когда играет музыка.
+// Ровно ради этого два элемента, а не один — пауза не выгружает видео.
+let queue = [], qi = -1;          // видеоочередь
+let musicQueue = [], mi = -1;     // музыкальная очередь; mi — индекс в ней
+// Порядок игры: morder — индексы очереди в том порядке, в каком их играть
+// (прямой или перемешанный), mpos — где мы в нём.
+let morder = [], mpos = -1;
+
+let stack = [];                   // где мы в дереве папок (режим «Файлы»)
+let items = [];
+// Очередь просмотра с главной: фильмы и сериалы по порядку. Когда её
+// смотрят, plan указывает на текущую запись.
+let watchList = loadWatchList();
+let plan = null;
+// «Продолжить просмотр»: где остановились в сериалах и фильмах. Живёт на
+// агенте (хранилище вебвью бывает очищено), здесь — последний загруженный список.
+let progressList = [];
+let resumeFor = null;   // {id, to}: перемотать эту серию, как только она загрузится
+// «✕ Убрать» с главной, а файл всё ещё загружен в плеере на паузе: без этого
+// следующее же сохранение (например, при закрытии страницы) вернуло бы запись
+let forgotten = null;
+
+const store = {
+  get(k, d){ try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch(e){ return d; } },
+  set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} },
+};
+// Как играть музыку: once — очередь один раз, all — плейлист по кругу,
+// one — один трек по кругу. И порядок: прямой или случайный. Помнятся на
+// приставке между запусками.
+// Плавный переход между треками: включён ли, общая громкость музыки и
+// текущий переход (объявлены здесь: renderMusicModes() зовётся при загрузке).
+const FADE = 4;
+let musicFade = store.get('htv.mfade', true) !== false;
+let musicVol = 1;
+let fadeTo = null;          // {el, pos}: куда переходим
+let musicRepeat = ['once','all','one'].includes(store.get('htv.mrepeat','once')) ? store.get('htv.mrepeat','once') : 'once';
+let musicShuffle = !!store.get('htv.mshuffle', false);
+// «Музыка на паузе»: видео на паузу — играет музыка, видео пошло — музыка
+// стихает. Только на эту сессию страницы.
+let musicOnPause = false;
+try { musicOnPause = sessionStorage.getItem('htv.musicOnPause') === '1'; } catch(e) {}
+
+function loadWatchList(){
+  try { return JSON.parse(localStorage.getItem('htv.watch') || '[]'); } catch(e){ return []; }
+}
+function saveWatchList(){ store.set('htv.watch', watchList); }
+
+const fmt = t => {
+  if (!isFinite(t)) return '';
+  t = Math.round(t);
+  const h = Math.floor(t/3600), m = Math.floor(t%3600/60), s = t%60;
+  return (h ? h+':'+String(m).padStart(2,'0') : m) + ':' + String(s).padStart(2,'0');
+};
+const getJSON = url => fetch(BASE+url).then(r => r.json());
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+$('start').onclick = () => {
+  // Разблокировка звука — это само нажатие: браузер запоминает, что
+  // пользователь взаимодействовал со страницей, и дальше пускает play()
+  // откуда угодно. Ничего проигрывать для этого НЕ НАДО — и нельзя:
+  // play() у элемента без источника не отвергается и не выполняется, он
+  // висит вечно, и обработчик с await на нём не доходит до конца.
+  $('gate').style.display = 'none';
+  $('app').classList.add('on');
+  setMode(store.get('htv.mode', 'visual'));
+  loadLooks();
+  pollJobs();
+};
+
+// --- режимы ---
+
+let mode = 'visual';
+
+function setMode(next){
+  mode = next === 'files' ? 'files' : 'visual';
+  setTimeout(() => updateBackdrop(), 0);
+  store.set('htv.mode', mode);
+  $('app').classList.toggle('visual', mode === 'visual');
+  $('app').classList.remove('player');
+  document.querySelectorAll('#modes .btn').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
+  if (mode === 'visual') openCatalog();
+  else openLibraries();
+}
+document.querySelectorAll('#modes .btn').forEach(b => { b.onclick = () => setMode(b.dataset.mode); });
+
+function goBack(){
+  if (photoFull) return closePhotoFull();
+  if (mode === 'files') return goUp();
+  if ($('app').classList.contains('player')) return leavePlayer();
+  if (vstack.length) { vstack.pop(); return renderVisual(); }
+}
+$('up').onclick = goBack;
+
+// --- режим «Файлы»: дерево ---
+
+async function openLibraries(){
+  const r = await getJSON('/api/libraries');
+  stack = [];
+  items = r.libraries.map(l => ({id:l.id, name:l.title, is_dir:true, kind:l.kind}));
+  render('Библиотеки');
+}
+
+async function openDir(id, name){
+  const r = await getJSON('/api/browse?id='+encodeURIComponent(id));
+  if (r.error) { $('path').textContent = r.error; return; }
+  stack.push({id, name});
+  items = r.items;
+  render(stack.map(s=>s.name).join(' / '));
+}
+
+function goUp(){
+  if (!stack.length) return;
+  stack.pop();
+  const parent = stack.pop();
+  if (!parent) openLibraries(); else openDir(parent.id, parent.name);
+}
+
+function verdictTag(it){
+  if (it.is_dir) return '';   // папку и так видно по значку в названии
+  if (!it.info) return '';
+  if (it.ready) return '<span class="tag">перекодирован</span>';
+  if (it.info.verdict === 'ok') return '<span class="tag">'+(it.info.height?it.info.height+'p':fmt(it.info.duration))+'</span>';
+  const why = {remux:'нужен MP4', audio:'звук '+it.info.acodec, video:'видео '+it.info.vcodec};
+  return '<span class="tag warn">⚠ '+(why[it.info.verdict]||it.info.verdict)+' — нажмите, чтобы перекодировать</span>';
+}
+
+function render(title){
+  $('path').textContent = title;
+  $('up').style.visibility = stack.length ? 'visible' : 'hidden';
+  const list = $('list');
+  list.innerHTML = '';
+  items.forEach((it, idx) => {
+    const el = document.createElement('div');
+    el.className = 'row';
+    el.tabIndex = 0;
+    el.innerHTML = '<span class="nm">'+(it.is_dir?'📁 ':'')+escapeHtml(it.name)+'</span>'+verdictTag(it);
+    el.onkeydown = e => rowKeys(e, idx);
+    el.onclick = () => activate(idx);
+    list.appendChild(el);
+  });
+  const first = list.firstElementChild;
+  if (first) first.focus();
+}
+
+function rowKeys(e, idx){
+  const rows = [...$('list').children];
+  if (e.key === 'ArrowDown'){ e.preventDefault(); e.stopPropagation(); (rows[idx+1]||rows[0]).focus(); }
+  else if (e.key === 'ArrowUp'){ e.preventDefault(); e.stopPropagation(); (rows[idx-1]||rows[rows.length-1]).focus(); }
+  else if (e.key === 'Enter'){ e.preventDefault(); e.stopPropagation(); activate(idx); }
+  else if (e.key === 'ArrowRight'){ e.preventDefault(); e.stopPropagation(); $('bar').firstElementChild.focus(); }
+}
+
+function playable(it){ return it.ready || (it.info && it.info.verdict === 'ok'); }
+
+// Есть ли в файле картинка. Файл без видеодорожки в <video> открывать нельзя:
+// получится чёрный прямоугольник вместо музыки — ровно то, чего быть не должно.
+function hasVideo(it){ return !!(it.info && it.info.vcodec); }
+
+/**
+ * Собрать очередь и включить.
+ *
+ * Очередь — вся папка, а не один файл: сериал смотрят подряд. Но только
+ * ОДНОРОДНАЯ: если в папке вперемешку серии и треки, за серией не должен
+ * начинаться трек. force === 'music' позволяет пустить фильм фоном как звук.
+ */
+function startFrom(list, it, force){
+  const all = list.filter(x => !x.is_dir && x.url && playable(x));
+  const asMusic = force === 'music' || !hasVideo(it);
+  let queueItems;
+  if (force === 'music') queueItems = all;              // фильм фоном как звук
+  else if (asMusic) queueItems = all.filter(x => !hasVideo(x));
+  else queueItems = all.filter(hasVideo);
+  const idx = Math.max(0, queueItems.findIndex(x => x.id === it.id));
+  if (!queueItems.length) return;
+  if (asMusic){ setMusicQueue(queueItems, idx); playMusic(); }
+  else { plan = null; queue = queueItems; qi = idx; playVideo(); }
+}
+
+function activate(idx){
+  const it = items[idx];
+  if (it.is_dir) { openDir(it.id, it.name); return; }
+  if (!it.info) return;
+  if (!playable(it)) { transcode(it); return; }
+  startFrom(items, it, '');
+}
+
+// --- режим «Визуальный»: каталог ---
+//
+// Каталог собирает агент по структуре папок: сериал — папка с сезонами,
+// фильм — файл или папка с одним файлом, музыка — папки, где лежат треки.
+// Постеры он же находит в интернете и кладёт рядом с фильмом или сериалом.
+
+let catalog = {films:[], series:[], music:[], clips:[], photos:[]};
+let vstack = [];      // экраны поверх главной: сериал, музыкальная папка
+
+async function openCatalog(){
+  $('path').textContent = 'Загрузка…';
+  try { [catalog] = await Promise.all([getJSON('/api/catalog'), loadProgress()]); }
+  catch(e) { $('path').textContent = 'Каталог не загрузился: '+e.message; return; }
+  vstack = [];
+  renderVisual();
+}
+
+function renderVisual(){
+  const top = vstack[vstack.length-1];
+  updateBackdrop(top);
+  $('up').style.visibility = vstack.length ? 'visible' : 'hidden';
+  if (!top) return renderHome();
+  // список серий и треков грузится при КАЖДОМ показе экрана, а не только при
+  // первом открытии: иначе после возврата из плеера экран застревал на
+  // «Загрузка…» (разбор файлов закэширован, повтор почти бесплатный)
+  if (top.kind === 'series') { renderSeries(top); return loadSeason(); }
+  if (top.kind === 'music' || top.kind === 'playlist') { renderMusicDir(top); return loadTracks(); }
+  if (top.kind === 'info') return renderInfo(top);
+  if (top.kind === 'clips') { renderClipsDir(top); return loadClips(); }
+  if (top.kind === 'photos') return renderPhotos(top);
+}
+
+const TILE_ICON = {film:'🎬', series:'📺', music:'🎵', playlist:'🎶', clip:'🎞', clips:'🎞', photos:'🖼'};
+const TILE_SHAPE = {music:' square', playlist:' square', clip:' wide', clips:' wide', photos:' photo'};
+
+function tileHTML(t, extra){
+  const icon = TILE_ICON[t.kind];
+  const badge = t.kind === 'series' ? '<span class="badge">'+t.seasons.length+' сез.</span>'
+    : ['music','playlist','clips','photos'].includes(t.kind) ? '<span class="badge">'+t.count+'</span>' : '';
+  // постер грузится отдельным запросом: агент может в этот момент искать его
+  // в интернете, и каталог не должен его ждать
+  const img = t.poster ? '<img loading="lazy" alt="" src="'+escapeHtml(t.poster)+'" onerror="this.remove()">' : '';
+  return '<div class="tile">'+
+    '<div class="poster'+(TILE_SHAPE[t.kind]||'')+'" tabindex="0" data-open="'+t.kind+':'+t.id+'">'+
+      '<span class="ph">'+icon+'</span>'+img+badge+'</div>'+
+    '<div class="tname">'+escapeHtml(t.name)+'</div>'+(extra||'')+'</div>';
+}
+
+function renderHome(){
+  $('path').textContent = 'Медиатека';
+  const box = $('visual');
+  box.classList.remove('photos');
+  let html = '';
+  if (progressList.length) {
+    html += '<div class="sec"><div class="sec-head"><h2>Продолжить просмотр</h2></div><div class="grid">'+
+      progressList.map(progressTile).join('')+'</div></div>';
+  }
+  if (watchList.length) {
+    html += '<div class="sec"><div class="sec-head"><h2>Очередь</h2>'+
+      '<button class="btn primary" data-act="watch">▶ Смотреть очередь</button>'+
+      '<button class="btn" data-act="clearwatch">Очистить</button></div><div class="grid">'+
+      watchList.map((t, i) => tileHTML(t, '<button class="btn" data-unwatch="'+i+'">✕ Убрать</button>')).join('')+
+      '</div></div>';
+  }
+  const section = (title, list, withQueue) => {
+    html += '<div class="sec"><div class="sec-head"><h2>'+title+'</h2></div>';
+    if (!list.length) { html += '<div class="empty">Пока пусто</div></div>'; return; }
+    html += '<div class="grid">'+list.map(t => tileHTML(t,
+      withQueue ? '<div class="tbtns"><button class="btn" data-enqueue="'+t.kind+':'+t.id+'">＋ В очередь</button>'+
+        '<button class="btn" data-info="'+t.kind+':'+t.id+'">ℹ Инфо</button></div>' : '')).join('')+'</div></div>';
+  };
+  section('Сериалы', catalog.series, true);
+  section('Фильмы', catalog.films, true);
+  // ролики и фото бывают не у всех — пустой раздел только мешал бы листать
+  if ((catalog.clips||[]).length) section('Видеоролики', catalog.clips, false);
+  if ((catalog.photos||[]).length) section('Фото и видео', catalog.photos, false);
+  // свои плейлисты — первыми, за ними папки
+  section('Музыка', (catalog.playlists || []).concat(catalog.music || []), false);
+  box.innerHTML = html;
+  box.scrollTop = 0;
+  focusFirst(box);
+}
+
+function episodeLabel(e){
+  if (e.kind === 'film') return '';
+  const m = /S(\d{1,2})\s*E(\d{1,3})/i.exec(e.episode) || /(\d{1,2})x(\d{1,3})/.exec(e.episode);
+  if (m) return 'S'+String(+m[1]).padStart(2,'0')+' · E'+String(+m[2]).padStart(2,'0');
+  return e.season ? e.season+' · '+e.episode : e.episode;
+}
+
+function progressTile(e, i){
+  const pct = e.duration > 0 ? Math.min(100, e.position / e.duration * 100) : 0;
+  const left = e.duration > 0 ? Math.max(1, Math.round((e.duration - e.position) / 60)) : 0;
+  // позиция 0 — предыдущую серию досмотрели, эта следующая
+  const sub = e.position > 0 ? 'осталось '+left+' мин' : 'следующая серия';
+  const label = episodeLabel(e);
+  return '<div class="tile">'+
+    '<div class="poster" tabindex="0" data-resume="'+i+'"><span class="ph">'+(e.kind==='film'?'🎬':'📺')+'</span>'+
+      (e.poster ? '<img loading="lazy" alt="" src="'+escapeHtml(e.poster)+'" onerror="this.remove()">' : '')+
+      (label ? '<span class="badge">'+escapeHtml(label)+'</span>' : '')+
+      '<span class="bar"><i style="width:'+pct.toFixed(1)+'%"></i></span></div>'+
+    '<div class="tname">'+escapeHtml(e.title)+'</div>'+
+    '<div class="tsub">'+sub+'</div>'+
+    '<button class="btn" data-unresume="'+i+'">✕ Убрать</button></div>';
+}
+
+function findTile(ref){
+  const [kind, id] = ref.split(':');
+  const list = kind === 'film' ? catalog.films : kind === 'series' ? catalog.series
+    : kind === 'clip' || kind === 'clips' ? (catalog.clips||[])
+    : kind === 'photos' ? (catalog.photos||[]) : kind === 'playlist' ? (catalog.playlists||[]) : catalog.music;
+  return list.find(t => t.id === id) || watchList.find(t => t.kind === kind && t.id === id);
+}
+
+$('visual').addEventListener('click', e => {
+  const el = e.target.closest('[data-mdir],[data-mpart],[data-addpl],[data-plrm],[data-info],[data-open],[data-act],[data-enqueue],[data-unwatch],[data-season],[data-ep],[data-track],[data-resume],[data-unresume],[data-clip],[data-photo],[data-pdir],[data-pmain]');
+  if (!el) return;
+  const d = el.dataset;
+  if (d.resume) return resumeEntry(progressList[+d.resume]);
+  if (d.unresume) return forgetProgress(progressList[+d.unresume]);
+  if (d.open) return openTile(findTile(d.open));
+  if (d.enqueue) return enqueue(findTile(d.enqueue), el);
+  if (d.unwatch) { watchList.splice(+d.unwatch, 1); saveWatchList(); return renderHome(); }
+  if (d.season) return selectSeason(+d.season);
+  if (d.ep) return playEpisode(+d.ep);
+  if (d.track) return playTrack(+d.track);
+  if (d.clip) return playClip(+d.clip);
+  if (d.mpart) return playMusicPart(+d.mpart);
+  if (d.mdir) return openMusicDir(+d.mdir);
+  if (d.info) return openInfo(findTile(d.info));
+  if (d.addpl) {
+    const it = (vstack[vstack.length-1].tracks || []).find(x => x.id === d.addpl);
+    return addToPlaylist([d.addpl], 'Трек «'+(it ? it.name.replace(/\.[^.]+$/, '') : '')+'»');
+  }
+  if (d.plrm) {
+    const top = vstack[vstack.length-1];
+    return fetch(BASE+'/api/playlists/'+top.tile.id+'/remove', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({id: d.plrm})}).then(r => r.json()).then(r => { top.tile.count = r.count; renderVisual(); }).catch(() => {});
+  }
+  if (d.photo) return openPhotoFull(+d.photo);
+  if (d.pmain !== undefined) return openPhotoFull(vstack[vstack.length-1].index);
+  if (d.pdir) return openPhotoDir(vstack[vstack.length-1].dirs[+d.pdir]);
+  switch (d.act){
+    case 'series-resume': return resumeEntry(progressList.find(p => p.key === vstack[vstack.length-1].tile.id));
+    case 'watch': return watchQueue(0);
+    case 'clearwatch': watchList = []; saveWatchList(); return renderHome();
+    case 'series-start': plan = null; return playSeriesFrom(vstack[vstack.length-1].tile, 0, 0);
+    case 'series-queue': return enqueue(vstack[vstack.length-1].tile, el);
+    case 'music-all': return playAllTracks();
+    case 'clips-all': return playClip(0);
+    case 'folder-to-pl': { const t = vstack[vstack.length-1].tile; return addToPlaylist([t.id], 'Папка «'+t.name+'»'); }
+    case 'pl-rename': return (async () => {
+      const top = vstack[vstack.length-1];
+      const name = await askText('Новое название плейлиста', top.tile.name, '');
+      if (!name || !name.trim()) return;
+      const r = await fetch(BASE+'/api/playlists/'+top.tile.id+'/rename', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({name})}).then(r => r.json()).catch(() => ({}));
+      if (r.name) { top.tile.name = r.name; renderVisual(); }
+    })();
+    case 'pl-delete': return (async () => {
+      const top = vstack[vstack.length-1];
+      if (!await askConfirm('Удалить плейлист «'+top.tile.name+'»? Сами треки останутся в своих папках.', '🗑 Удалить', true)) return;
+      await fetch(BASE+'/api/playlists/'+top.tile.id, {method:'DELETE'}).catch(() => {});
+      catalog.playlists = (catalog.playlists || []).filter(p => p.id !== top.tile.id);
+      vstack.pop(); renderVisual();
+    })();
+    case 'info-resume': return resumeEntry(progressList.find(p => p.key === vstack[vstack.length-1].tile.id));
+    case 'info-start': {
+      const t = vstack[vstack.length-1].tile;
+      plan = null;
+      return t.kind === 'film' ? playFilm(t) : playSeriesFrom(t, 0, 0);
+    }
+    case 'info-episodes': { const t = vstack[vstack.length-1].tile; vstack.pop(); return openTile(t); }
+    case 'info-queue': return enqueue(vstack[vstack.length-1].tile, el);
+    case 'slideshow': return openSlideshowSetup();
+  }
+});
+
+async function openTile(t){
+  if (!t) return;
+  // открыли плитку сами — это уже не просмотр очереди с главной
+  if (t.kind === 'film') { plan = null; return playFilm(t); }
+  if (t.kind === 'series') {
+    const saved = progressList.find(p => p.key === t.id);
+    const season = saved ? Math.max(0, t.seasons.findIndex(s => s.id === saved.season_id)) : 0;
+    vstack.push({kind:'series', tile:t, season, episodes:[]});
+    return renderVisual();
+  }
+  if (t.kind === 'music' || t.kind === 'playlist') { vstack.push({kind:t.kind, tile:t, tracks:[]}); return renderVisual(); }
+  if (t.kind === 'clip') { plan = null; return playFilm(t); }
+  if (t.kind === 'clips') { vstack.push({kind:'clips', tile:t, clips:[]}); return renderVisual(); }
+  if (t.kind === 'photos') return openPhotoDir(t);
+}
+
+function enqueue(t, el){
+  if (!t) return;
+  if (watchList.some(x => x.kind === t.kind && x.id === t.id)) {
+    if (el) el.textContent = '✓ Уже в очереди';
+    return;
+  }
+  // храним только то, что нужно для плитки: ссылки на файлы получим заново,
+  // когда дойдёт дело — страница на приставке живёт сутками
+  watchList.push({kind:t.kind, id:t.id, name:t.name, poster:t.poster, file:t.file||'',
+                  seasons:t.seasons||[], count:t.count});
+  saveWatchList();
+  if (el) el.textContent = '✓ В очереди';
+  // если очередь уже смотрят — новое встанет в конец сразу
+}
+
+// --- экран сериала ---
+
+function renderSeries(top){
+  const t = top.tile;
+  $('path').textContent = t.name;
+  const box = $('visual');
+  box.classList.remove('photos');
+  box.innerHTML = '<div class="detail">'+
+    '<div class="poster"><span class="ph">📺</span>'+(t.poster?'<img alt="" src="'+escapeHtml(t.poster)+'" onerror="this.remove()">':'')+'</div>'+
+    '<div class="dinfo"><h2>'+escapeHtml(t.name)+'</h2>'+
+    '<div class="sub">'+t.count+' '+plural(t.count,'серия','серии','серий')+' · '+t.seasons.length+' '+plural(t.seasons.length,'сезон','сезона','сезонов')+'</div>'+
+    '<div class="actions">'+seriesResumeButton(t)+
+    '<button class="btn'+(seriesResumeButton(t)?'':' primary')+'" data-act="series-start">▶ Смотреть с начала</button>'+
+    '<button class="btn" data-act="series-queue">＋ В очередь</button></div>'+
+    '<div class="seasons">'+t.seasons.map((s, i) =>
+      '<button class="btn'+(i===top.season?' on':'')+'" data-season="'+i+'">'+escapeHtml(s.name)+'</button>').join('')+'</div>'+
+    '<div class="eps" id="eps"><div class="empty">Загрузка серий…</div></div>'+
+    '</div></div>';
+  box.scrollTop = 0;
+  focusFirst(box);
+}
+
+function seriesResumeButton(t){
+  const e = progressList.find(p => p.key === t.id);
+  if (!e) return '';
+  const tail = e.position > 0 ? ', осталось '+Math.max(1, Math.round((e.duration - e.position)/60))+' мин' : '';
+  return '<button class="btn primary" data-act="series-resume">▶ Продолжить '+escapeHtml(episodeLabel(e))+tail+'</button>';
+}
+
+async function loadSeason(){
+  const top = vstack[vstack.length-1];
+  if (!top || top.kind !== 'series') return;
+  const season = top.tile.seasons[top.season];
+  const r = await getJSON('/api/browse?id='+encodeURIComponent(season.id)).catch(() => ({items:[]}));
+  if (vstack[vstack.length-1] !== top) return;    // пока грузили, ушли с экрана
+  top.episodes = (r.items||[]).filter(x => !x.is_dir);
+  const eps = $('eps');
+  if (!eps) return;
+  eps.innerHTML = top.episodes.length ? top.episodes.map((it, i) =>
+    '<div class="row" tabindex="0" data-ep="'+i+'"><span class="nm">'+escapeHtml(it.name.replace(/\.[^.]+$/, ''))+
+    '</span>'+verdictTag(it)+'</div>').join('') : '<div class="empty">В сезоне нет серий</div>';
+}
+
+function selectSeason(i){
+  const top = vstack[vstack.length-1];
+  top.season = i;
+  document.querySelectorAll('#visual .seasons .btn').forEach((b, j) => b.classList.toggle('on', j === i));
+  loadSeason();
+}
+
+function playEpisode(i){
+  const top = vstack[vstack.length-1];
+  const it = top.episodes[i];
+  if (!it) return;
+  if (!playable(it)) return transcode(it);
+  plan = null;
+  startSeason(top.episodes, i);
+}
+
+// Сериал играет сезон за сезоном: очередь — текущий сезон, а дальше плеер
+// сам спрашивает у агента следующий (см. onQueueEnd). Грузить все сезоны
+// разом незачем — у «Теории большого взрыва» их двенадцать, и разбор каждой
+// серии на слабом процессоре стоит времени.
+function startSeason(list, index){
+  const vids = list.filter(x => !x.is_dir && x.url && playable(x) && hasVideo(x));
+  const it = list[index];
+  const idx = Math.max(0, vids.findIndex(x => x.id === it.id));
+  if (!vids.length) return;
+  queue = vids; qi = idx;
+  playVideo();
+  showPlayer();
+}
+
+async function playSeriesFrom(t, seasonIndex, episodeIndex){
+  const season = t.seasons[seasonIndex];
+  if (!season) return false;
+  const r = await getJSON('/api/browse?id='+encodeURIComponent(season.id)).catch(() => ({items:[]}));
+  const vids = (r.items||[]).filter(x => !x.is_dir && x.url && playable(x) && hasVideo(x));
+  if (!vids.length) return playSeriesFrom(t, seasonIndex+1, 0);   // пустой или непригодный сезон
+  queue = vids; qi = Math.min(episodeIndex, vids.length-1);
+  playVideo();
+  showPlayer();
+  return true;
+}
+
+async function playFilm(t){
+  const r = await getJSON('/api/item?id='+encodeURIComponent(t.file)).catch(e => ({error:e.message}));
+  if (!r.item) { $('path').textContent = r.error || 'Фильм не открылся'; return false; }
+  if (!playable(r.item)) { transcode(r.item); return false; }
+  queue = [r.item]; qi = 0;
+  playVideo();
+  showPlayer();
+  return true;
+}
+
+// --- музыкальная папка ---
+
+function renderMusicDir(top){
+  const t = top.tile;
+  const pl = top.kind === 'playlist';
+  $('visual').classList.remove('photos');
+  $('path').textContent = (pl ? 'Плейлист: ' : 'Музыка: ')+t.name;
+  $('visual').innerHTML = '<div class="detail">'+
+    '<div class="poster square"><span class="ph">'+(pl ? '🎶' : '🎵')+'</span>'+
+      (t.poster ? '<img alt="" src="'+escapeHtml(t.poster)+'" onerror="this.remove()">' : '')+'</div>'+
+    '<div class="dinfo"><h2>'+escapeHtml(t.name)+'</h2>'+
+    '<div class="sub">'+t.count+' '+plural(t.count,'трек','трека','треков')+'</div>'+
+    '<div class="actions"><button class="btn primary" data-act="music-all">▶ Играть всё</button>'+
+      (pl ? '<button class="btn" data-act="pl-rename">✏ Переименовать</button><button class="btn danger" data-act="pl-delete">🗑 Удалить плейлист</button>'
+          : '<button class="btn" data-act="folder-to-pl">＋ Всю папку в плейлист</button>')+'</div>'+
+    // альбом разложен по подпапкам (CD1, CD2) — их можно включить по отдельности
+    ((t.seasons && t.seasons.length) ? '<div class="seasons">'+t.seasons.map((d, i) =>
+      '<button class="btn" data-mpart="'+i+'">▶ '+escapeHtml(d.name)+' · '+d.count+'</button>').join('')+'</div>' : '')+
+    '<div class="eps" id="tracks"><div class="empty">Загрузка…</div></div></div></div>';
+  focusFirst($('visual'));
+}
+
+// Список папки: сначала подпапки строками (в них заходят), потом свои треки.
+// Раньше треки подпапок сыпались сюда же вперемешку и было не понять, что
+// откуда; «Играть всё» по-прежнему берёт альбом целиком, со всеми дисками.
+async function loadTracks(){
+  const top = vstack[vstack.length-1];
+  const pl = top.kind === 'playlist';
+  const r = await getJSON(pl ? '/api/playlists/'+encodeURIComponent(top.tile.id) : '/api/browse?id='+encodeURIComponent(top.tile.id)).catch(() => ({items:[]}));
+  if (vstack[vstack.length-1] !== top) return;
+  top.tracks = (r.items||[]).filter(x => !x.is_dir);
+  top.subdirs = (r.items||[]).filter(x => x.is_dir);
+  const dirs = top.subdirs.map((d, i) =>
+    '<div class="row" tabindex="0" data-mdir="'+i+'"><span class="nm">📁 '+escapeHtml(d.name)+'</span></div>').join('');
+  const tracks = top.tracks.map((it, i) =>
+    '<div class="row" tabindex="0" data-track="'+i+'"><span class="nm">'+escapeHtml(it.name.replace(/\.[^.]+$/, ''))+
+    '</span>'+verdictTag(it)+
+    (pl ? '<button class="btn mini" data-plrm="'+it.id+'" title="Убрать из плейлиста">✕</button>'
+        : '<button class="btn mini" data-addpl="'+it.id+'" title="В плейлист">＋</button>')+'</div>').join('');
+  $('tracks').innerHTML = (dirs + tracks) ||
+    '<div class="empty">'+(pl ? 'Плейлист пуст — добавляйте треки кнопкой «＋» в папках музыки' : 'Треков нет')+'</div>';
+  markPlayingRow();
+}
+
+// Открыть подпапку: обычный экран музыки, как у альбома.
+function openMusicDir(i){
+  const top = vstack[vstack.length-1];
+  const d = top && top.subdirs && top.subdirs[i];
+  if (!d) return;
+  vstack.push({kind:'music', tile:{id:d.id, name:d.name, kind:'music', count:0}, tracks:[]});
+  renderVisual();
+}
+
+// Подсветка играющего трека в открытом списке: слышно музыку — видно, где она.
+function markPlayingRow(){
+  const box = $('tracks');
+  if (!box) return;
+  const top = vstack[vstack.length-1];
+  const cur = musicQueue[mi];
+  box.querySelectorAll('.row.cur').forEach(r => { r.classList.remove('cur'); const e = r.querySelector('.eq'); if (e) e.remove(); });
+  if (!cur || !top || !top.tracks) return;
+  const i = top.tracks.findIndex(x => x.id === cur.id);
+  const row = i >= 0 && box.querySelector('[data-track="'+i+'"]');
+  if (!row) return;
+  row.classList.add('cur');
+  row.insertAdjacentHTML('beforeend', '<span class="eq">'+(a.paused ? '⏸' : '♪')+'</span>');
+}
+
+// --- плейлисты ---
+
+function tracksURL(id){ return /^pl[0-9a-f]+$/.test(id) ? '/api/playlists/'+encodeURIComponent(id) : '/api/tracks?id='+encodeURIComponent(id); }
+async function tracksOf(id){
+  const r = await getJSON(tracksURL(id)).catch(() => ({items: []}));
+  return (r.items||[]).filter(x => !x.is_dir && x.url && playable(x) && !hasVideo(x));
+}
+
+// Куда добавить: список плейлистов и «новый». ids — треки или папка.
+async function addToPlaylist(ids, what){
+  const r = await getJSON('/api/playlists').catch(() => ({playlists: []}));
+  const lists = r.playlists || [];
+  let choice = null;
+  const pick = e => { const b = e.target.closest('[data-plpick]'); if (b) choice = b.dataset.plpick; };
+  $('mbox').addEventListener('click', pick);
+  adminState.lastFocus = document.activeElement;
+  const ok = await modal('<p>'+escapeHtml(what)+' — в какой плейлист?</p><div class="ssopt">'+
+    lists.map(p => '<button class="btn" data-modal="ok" data-plpick="'+p.id+'">🎶 '+escapeHtml(p.name)+' · '+p.count+'</button>').join('')+
+    '<button class="btn primary" data-modal="ok" data-plpick="new">＋ Новый плейлист…</button></div>'+
+    '<div class="mbtns"><button class="btn" data-modal="cancel">Отмена</button></div>', '[data-plpick]');
+  $('mbox').removeEventListener('click', pick);
+  if (!ok || !choice) return;
+  let res;
+  if (choice === 'new') {
+    const name = await askText('Название нового плейлиста', '', '');
+    if (!name || !name.trim()) return;
+    res = await fetch(BASE+'/api/playlists', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({name, ids})}).then(r => r.json()).catch(() => ({}));
+    if (res.playlist) osd('🎶 «'+res.playlist.name+'»: '+res.playlist.count+' '+plural(res.playlist.count,'трек','трека','треков'));
+  } else {
+    res = await fetch(BASE+'/api/playlists/'+choice+'/add', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ids})}).then(r => r.json()).catch(() => ({}));
+    if (res.count !== undefined) osd(res.added ? '🎶 Добавлено: '+res.added+', в плейлисте '+res.count : '🎶 Уже в плейлисте');
+  }
+  if (res && res.error) osd('⚠ '+res.error);
+  catalog.playlists = (await getJSON('/api/playlists').catch(() => ({playlists: []}))).playlists || [];
+}
+
+// --- «Инфо»: карточка фильма или сериала ---
+//
+// Описание, год, жанры, оценки и актёры — агент берёт их из открытых
+// источников при первом открытии и хранит рядом с постером; в админке их
+// можно поправить. Отсюда же — смотреть с начала или продолжить.
+
+async function openInfo(t){
+  if (!t) return;
+  vstack.push({kind: 'info', tile: t, info: undefined});
+  renderVisual();
+  const top = vstack[vstack.length-1];
+  const r = await getJSON('/api/info?id='+encodeURIComponent(t.id)).catch(() => ({}));
+  top.info = r.info || null;
+  if (vstack[vstack.length-1] === top) renderInfo(top);
+}
+
+function renderInfo(top){
+  const t = top.tile, inf = top.info;
+  const box = $('visual');
+  box.classList.remove('photos');
+  $('path').textContent = t.name;
+  const saved = progressList.find(p => p.key === t.id);
+  const resume = saved ? '<button class="btn primary" data-act="info-resume">▶ Продолжить'+
+    (t.kind === 'series' ? ' '+escapeHtml(episodeLabel(saved)) : '')+
+    (saved.position > 0 ? ', осталось '+Math.max(1, Math.round((saved.duration - saved.position)/60))+' мин' : '')+'</button>' : '';
+  let body;
+  if (inf === undefined) body = '<div class="empty">Ищу описание…</div>';
+  else if (!inf) body = '<div class="empty">Описания пока нет — его можно добавить в админке (⚙ → «ℹ» у строки).</div>';
+  else body =
+    (inf.genres && inf.genres.length ? '<div class="chips">'+inf.genres.map(g => '<span class="chip">'+escapeHtml(g)+'</span>').join('')+'</div>' : '')+
+    (inf.ratings && inf.ratings.length ? '<div class="ratings">'+inf.ratings.map(r => '<span>'+escapeHtml(r.source)+': <b>'+escapeHtml(r.value)+'</b></span>').join('')+'</div>' : '')+
+    (inf.description ? '<div class="idesc">'+escapeHtml(inf.description)+'</div>' : '')+
+    (inf.actors && inf.actors.length ? '<div class="iactors">В ролях: '+inf.actors.map(escapeHtml).join(', ')+'</div>' : '');
+  // год — если его ещё нет в названии («The Gentlemen (2019)»)
+  const year = inf && inf.year && !t.name.includes(String(inf.year)) ? ' <span class="sub">('+inf.year+')</span>' : '';
+  box.innerHTML = '<div class="detail">'+
+    '<div class="poster"><span class="ph">'+(t.kind === 'series' ? '📺' : '🎬')+'</span>'+(t.poster ? '<img alt="" src="'+escapeHtml(t.poster)+'" onerror="this.remove()">' : '')+'</div>'+
+    '<div class="dinfo"><h2>'+escapeHtml(t.name)+year+'</h2>'+
+    (t.kind === 'series' ? '<div class="sub">'+t.count+' '+plural(t.count,'серия','серии','серий')+' · '+t.seasons.length+' '+plural(t.seasons.length,'сезон','сезона','сезонов')+'</div>' : '')+
+    '<div class="actions">'+resume+
+      '<button class="btn'+(resume ? '' : ' primary')+'" data-act="info-start">▶ Смотреть сначала</button>'+
+      (t.kind === 'series' ? '<button class="btn" data-act="info-episodes">📺 Серии</button>' : '')+
+      '<button class="btn" data-act="info-queue">＋ В очередь</button></div>'+
+    body+'</div></div>';
+  box.scrollTop = 0;
+  focusFirst(box);
+}
+
+// Нажали на трек — очередь этой папки, начиная с него.
+// «Играть всё»: у папки — её треки со всеми вложенными, у плейлиста — он сам.
+async function playAllTracks(){
+  const top = vstack[vstack.length-1];
+  if (!top) return;
+  const tracks = await tracksOf(top.tile.id);
+  if (!tracks.length) return;
+  setMusicQueue(tracks, musicShuffle ? Math.floor(Math.random() * tracks.length) : 0);
+  playMusic();
+}
+
+function playTrack(i){
+  const top = vstack[vstack.length-1];
+  if (!top || !top.tracks.length) return;
+  const it = top.tracks[i] || top.tracks[0];
+  if (!playable(it)) return transcode(it);
+  startFrom(top.tracks, it, 'music');
+}
+
+// --- папка видеороликов ---
+
+function renderClipsDir(top){
+  const t = top.tile;
+  $('visual').classList.remove('photos');
+  $('path').textContent = 'Видеоролики: '+t.name;
+  $('visual').innerHTML = '<div class="detail">'+
+    '<div class="poster wide"><span class="ph">🎞</span>'+(t.poster?'<img alt="" src="'+escapeHtml(t.poster)+'" onerror="this.remove()">':'')+'</div>'+
+    '<div class="dinfo"><h2>'+escapeHtml(t.name)+'</h2>'+
+    '<div class="sub">'+t.count+' '+plural(t.count,'ролик','ролика','роликов')+'</div>'+
+    '<div class="actions"><button class="btn primary" data-act="clips-all">▶ Смотреть все</button></div>'+
+    '<div class="eps" id="clips"><div class="empty">Загрузка…</div></div></div></div>';
+  focusFirst($('visual'));
+}
+
+async function loadClips(){
+  const top = vstack[vstack.length-1];
+  const r = await getJSON('/api/browse?id='+encodeURIComponent(top.tile.id)).catch(() => ({items:[]}));
+  if (vstack[vstack.length-1] !== top) return;
+  top.clips = (r.items||[]).filter(x => !x.is_dir);
+  const box = $('clips');
+  if (!box) return;
+  box.innerHTML = top.clips.map((it, i) =>
+    '<div class="row" tabindex="0" data-clip="'+i+'"><span class="nm">'+escapeHtml(it.name.replace(/\.[^.]+$/, ''))+
+    '</span>'+verdictTag(it)+'</div>').join('') || '<div class="empty">Роликов нет</div>';
+}
+
+// Ролики папки идут подряд, как серии сезона, начиная с выбранного
+function playClip(i){
+  const top = vstack[vstack.length-1];
+  if (!top || !top.clips.length) return;
+  const it = top.clips[i] || top.clips[0];
+  if (!playable(it)) return transcode(it);
+  plan = null;
+  startSeason(top.clips, top.clips.indexOf(it));
+}
+
+// --- фото ---
+//
+// Экран папки: сверху снимок на большую часть экрана, снизу полоса — сами
+// снимки, за ними вложенные папки. Стрелки ходят по полосе, и снимок сверху
+// меняется вслед за фокусом, без OK. OK на снимке — во весь экран, там
+// стрелки листают, «Назад» возвращает к полосе. Приставке агент отдаёт не
+// оригиналы по 7 МБ, а копии под экран и маленькие превью.
+
+let photoFull = false;
+let photoTimer = null;
+
+async function openPhotoDir(t){
+  if (!t) return;
+  const r = await getJSON('/api/photos?id='+encodeURIComponent(t.id)).catch(e => ({error:e.message}));
+  if (r.error || !r.photos) { $('path').textContent = r.error || 'Папка не открылась'; return; }
+  vstack.push({kind:'photos', tile:t, name:r.folder.name, photos:r.photos, dirs:r.dirs||[], index:0});
+  renderVisual();
+}
+
+function renderPhotos(top){
+  const box = $('visual');
+  box.classList.add('photos');
+  $('path').textContent = 'Альбом: '+vstack.filter(x => x.kind === 'photos').map(x => x.name).join(' / ');
+  const n = top.photos.length;
+  const stills = top.photos.filter(p => !p.video).length;
+  const strip = (stills > 1 ? '<button class="pth ss" data-act="slideshow">▶ Слайд-шоу</button>' : '') +
+    top.photos.map((p, i) =>
+    '<button class="pth'+(i===top.index?' cur':'')+'" data-photo="'+i+'" title="'+escapeHtml(p.name)+'">'+
+      '<img loading="lazy" alt="" src="'+escapeHtml(p.thumb)+'">'+(p.video ? '<span class="vb">▶</span>' : '')+'</button>').join('') +
+    top.dirs.map((d, i) =>
+    '<button class="pth dir" data-pdir="'+i+'">'+(d.cover?'<img loading="lazy" alt="" src="'+escapeHtml(d.cover)+'">':'')+
+      '<span class="dic">📁</span><span class="dn">'+escapeHtml(d.name)+' · '+d.count+'</span></button>').join('');
+  box.innerHTML = '<div class="pv">'+
+    (n ? '<div class="pv-main" tabindex="0" data-pmain><img id="pvimg" alt=""><span class="vb" id="pvplay" hidden>▶</span><span class="pv-cap" id="pvcap"></span></div>'
+       : '<div class="pv-main"><div class="empty">В этой папке ничего нет'+(top.dirs.length?' — выберите папку ниже':'')+'</div></div>')+
+    '<div class="pv-strip" id="pvstrip">'+strip+'</div></div>';
+  if (n) showPhoto(top.index, true);
+  const cur = box.querySelector(n ? '.pth[data-photo="'+top.index+'"]' : '.pth');
+  if (cur) { cur.focus({preventScroll:true}); cur.scrollIntoView({block:'nearest', inline:'center'}); }
+}
+
+// Снимок сверху: сразу превью (оно уже загружено полосой), следом — копия
+// под экран. Пока листают стрелкой, крупную не просим: 150 мс тишины.
+function showPhoto(i, now){
+  const top = vstack[vstack.length-1];
+  if (!top || top.kind !== 'photos' || !top.photos[i]) return;
+  top.index = i;
+  const p = top.photos[i];
+  const img = $('pvimg');
+  if (!img) return;
+  document.querySelectorAll('#pvstrip .pth.cur').forEach(el => el.classList.remove('cur'));
+  const th = document.querySelector('#pvstrip .pth[data-photo="'+i+'"]');
+  if (th) th.classList.add('cur');
+  $('pvcap').textContent = (i+1)+' / '+top.photos.length+' · '+p.name+(p.video ? ' · ролик, OK — смотреть' : '');
+  $('pvplay').hidden = !p.video;
+  clearTimeout(photoTimer);
+  const big = () => loadInto(img, p.view, () => top.index === i);
+  img.src = p.thumb;
+  if (now) big(); else photoTimer = setTimeout(big, 150);
+}
+
+// Подменить картинку, только когда крупная загрузилась: иначе при быстром
+// листании экран мигал бы пустотой.
+function loadInto(img, url, still){
+  const pre = new Image();
+  pre.onload = () => { if (still()) img.src = url; };
+  pre.src = url;
+}
+
+$('visual').addEventListener('focusin', e => {
+  const th = e.target.closest && e.target.closest('.pth[data-photo]');
+  if (th) showPhoto(+th.dataset.photo, false);
+});
+
+function openPhotoFull(i){
+  const top = vstack[vstack.length-1];
+  if (!top || top.kind !== 'photos' || !top.photos.length) return;
+  photoFull = true;
+  $('pfull').classList.add('on');
+  fullPhoto(Math.max(0, Math.min(i, top.photos.length-1)));
+}
+
+// Два слоя картинки: новый снимок проявляется поверх старого, а не сменяет
+// его рывком — для слайд-шоу это обязательно, для листания просто приятнее.
+let pfFront = 'pfimg';
+function fullImage(p, still){
+  const front = $(pfFront), back = pfFront === 'pfimg' ? $('pfimg2') : $('pfimg');
+  let shown = false;
+  const show = src => {
+    if (!still()) return;
+    back.src = src;
+    if (shown) return;
+    shown = true;
+    back.style.opacity = 1;
+    front.style.opacity = 0;
+    pfFront = back.id;
+  };
+  const big = new Image();
+  big.onload = () => show(p.view);
+  big.src = p.view;
+  // копия под экран не успела — пусть пока проявится превью
+  setTimeout(() => { if (!shown) show(p.thumb); }, 400);
+}
+
+function fullPhoto(i){
+  const top = vstack[vstack.length-1];
+  const n = top.photos.length;
+  i = (i + n) % n;             // по кругу: с последнего на первый
+  top.index = i;
+  const p = top.photos[i];
+  const vid = $('pfvid');
+  if (p.video) {
+    // ролик с телефона играет прямо здесь, OK — пауза
+    $('pfull').classList.add('vid');
+    vid.poster = p.view;
+    vid.src = p.url;
+    vid.play().catch(() => {});
+  } else {
+    $('pfull').classList.remove('vid');
+    if (vid.getAttribute('src')) { vid.pause(); vid.removeAttribute('src'); vid.load(); }
+    fullImage(p, () => photoFull && top.index === i);
+  }
+  $('pfcap').textContent = (i+1)+' / '+n+' · '+p.name+(slideshow ? (slideshow.paused ? ' · ⏸ слайд-шоу' : ' · ▶ слайд-шоу') : '');
+  // соседние заранее: листают обычно подряд
+  [i+1, i-1].forEach(j => { const q = top.photos[(j+n)%n]; if (q && !q.video) new Image().src = q.view; });
+}
+
+function closePhotoFull(){
+  stopSlideshow();
+  photoFull = false;
+  $('pfull').classList.remove('on', 'vid');
+  ['pfimg', 'pfimg2'].forEach(id => { $(id).removeAttribute('src'); $(id).style.opacity = 0; });
+  const vid = $('pfvid');
+  if (vid.getAttribute('src')) { vid.pause(); vid.removeAttribute('src'); vid.load(); }
+  const top = vstack[vstack.length-1];
+  if (top && top.kind === 'photos') renderPhotos(top);   // полоса встанет на последний снимок
+}
+
+$('pfull').addEventListener('click', e => {
+  const b = e.target.closest('[data-pf]');
+  const top = vstack[vstack.length-1];
+  if (!b || !top) return;
+  if (b.dataset.pf === 'close') return closePhotoFull();
+  photoStep(b.dataset.pf === 'next' ? 1 : -1);
+});
+
+// --- слайд-шоу ---
+//
+// Снимки альбома по очереди (ролики пропускаются) с плавной сменой и музыкой из
+// библиотеки: плейлистом по кругу или одной песней по кругу. Настройки
+// запоминаются. OK — пауза, стрелки — листать руками, «Назад» — выйти (музыка
+// встаёт, прежний режим повтора возвращается).
+
+let slideshow = null;
+const ssCfg = Object.assign({interval: 5, shuffle: false, music: {kind: 'none'}}, store.get('htv.slideshow', {}));
+
+function photoStep(dir){
+  const top = vstack[vstack.length-1];
+  if (!top) return;
+  if (!slideshow) return fullPhoto(top.index + dir);
+  const ss = slideshow;
+  ss.pos = (ss.pos + dir + ss.order.length) % ss.order.length;
+  fullPhoto(ss.order[ss.pos]);
+  scheduleSlide();
+}
+
+function scheduleSlide(){
+  const ss = slideshow;
+  if (!ss) return;
+  clearTimeout(ss.timer);
+  if (!ss.paused) ss.timer = setTimeout(() => photoStep(1), ss.cfg.interval * 1000);
+}
+
+function toggleSlideshowPause(){
+  const ss = slideshow;
+  if (!ss) return;
+  ss.paused = !ss.paused;
+  if (ss.paused) { clearTimeout(ss.timer); if (!a.paused) a.pause(); }
+  else { scheduleSlide(); if (ss.music && a.paused) a.play().catch(() => {}); }
+  osd(ss.paused ? '⏸ Слайд-шоу на паузе' : '▶ Слайд-шоу');
+  fullPhoto(vstack[vstack.length-1].index);
+}
+
+async function startSlideshow(cfg){
+  const top = vstack[vstack.length-1];
+  if (!top || top.kind !== 'photos') return;
+  let order = top.photos.map((p, i) => p.video ? -1 : i).filter(i => i >= 0);
+  if (order.length < 2) return;
+  if (cfg.shuffle) {
+    for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+  } else {
+    // с того снимка, на котором стоим
+    const k = order.indexOf(top.index);
+    if (k > 0) order = order.slice(k).concat(order.slice(0, k));
+  }
+  slideshow = {cfg, order, pos: 0, timer: null, paused: false, music: false, repeat: musicRepeat};
+  if (cfg.music.kind !== 'none') {
+    let tracks = await tracksOf(cfg.music.folder);
+    if (cfg.music.kind === 'song') tracks = tracks.filter(x => x.id === cfg.music.track);
+    if (tracks.length && slideshow) {
+      musicRepeat = cfg.music.kind === 'song' ? 'one' : 'all';
+      setMusicQueue(tracks, cfg.music.kind === 'playlist' && musicShuffle ? Math.floor(Math.random() * tracks.length) : 0);
+      playMusic();
+      renderMusicModes();
+      slideshow.music = true;
+    }
+  }
+  if (!slideshow) return;
+  openPhotoFull(order[0]);
+  scheduleSlide();
+  osd('▶ Слайд-шоу · OK — пауза, «Назад» — выход');
+}
+
+function stopSlideshow(){
+  const ss = slideshow;
+  if (!ss) return;
+  slideshow = null;
+  clearTimeout(ss.timer);
+  if (ss.music) {
+    if (!a.paused) a.pause();
+    musicRepeat = ss.repeat;
+    renderMusicModes();
+  }
+}
+
+// Окно настройки перед запуском: интервал, музыка, порядок снимков.
+let ssDraft = null;
+async function openSlideshowSetup(){
+  ssDraft = JSON.parse(JSON.stringify(ssCfg));
+  await musicLibs();
+  renderSlideshowSetup();
+  adminState.lastFocus = document.activeElement;
+  const ok = await modal($('mbox').innerHTML, '[data-ss="start"]');
+  if (!ok) return;
+  Object.assign(ssCfg, ssDraft);
+  store.set('htv.slideshow', ssCfg);
+  startSlideshow(ssCfg);
+}
+
+function renderSlideshowSetup(tracksFor){
+  const d = ssDraft;
+  const on = c => c ? ' on' : '';
+  let html;
+  if (tracksFor) {
+    html = '<p>Песня из «'+escapeHtml(tracksFor.name)+'» — будет играть по кругу:</p><div class="ssopt">'+
+      tracksFor.tracks.map(t => '<button class="btn'+on(d.music.track === t.id)+'" data-ss="track" data-id="'+t.id+'" data-folder="'+tracksFor.id+'" data-name="'+escapeHtml(t.name.replace(/\.[^.]+$/, ''))+'">🎵 '+
+        escapeHtml(t.name.replace(/\.[^.]+$/, ''))+'</button>').join('')+'</div>'+
+      '<div class="mbtns"><button class="btn" data-ss="back">← Назад</button></div>';
+  } else {
+    const libs = (catalog.playlists || []).concat(catalog.music || []);
+    html = '<p><b>Слайд-шоу</b></p>'+
+      '<div class="ssopt"><span class="lbl">Каждый снимок</span>'+[3, 5, 8, 12].map(n =>
+        '<button class="btn'+on(d.interval === n)+'" data-ss="interval" data-n="'+n+'">'+n+' с</button>').join('')+'</div>'+
+      '<div class="ssopt"><span class="lbl">Музыка'+(d.music.kind === 'song' ? ': «'+escapeHtml(d.music.name||'')+'» по кругу' : '')+'</span>'+
+        '<button class="btn'+on(d.music.kind === 'none')+'" data-ss="nomusic">Без музыки</button>'+
+        libs.map(t => '<button class="btn'+on(d.music.kind === 'playlist' && d.music.folder === t.id)+'" data-ss="playlist" data-folder="'+t.id+'">🎵 '+escapeHtml(t.name)+' — плейлист</button>'+
+          (t.seasons||[]).map(p => '<button class="btn'+on(d.music.kind === 'playlist' && d.music.folder === p.id)+'" data-ss="playlist" data-folder="'+p.id+'">↳ '+escapeHtml(p.name)+'</button>').join('')+
+          '<button class="btn'+on(d.music.kind === 'song' && d.music.folder === t.id)+'" data-ss="songs" data-folder="'+t.id+'">🎵 Одна песня из «'+escapeHtml(t.name)+'»…</button>').join('')+
+      '</div>'+
+      '<div class="ssopt"><span class="lbl">Порядок снимков</span>'+
+        '<button class="btn'+on(!d.shuffle)+'" data-ss="order" data-v="0">По порядку</button>'+
+        '<button class="btn'+on(d.shuffle)+'" data-ss="order" data-v="1">🔀 Вперемешку</button></div>'+
+      '<div class="mbtns"><button class="btn" data-modal="cancel">Отмена</button>'+
+        '<button class="btn primary" data-modal="ok" data-ss="start">▶ Начать</button></div>';
+  }
+  $('mbox').innerHTML = html;
+}
+
+$('mbox').addEventListener('click', async e => {
+  const b = e.target.closest('[data-ss]');
+  if (!b || !ssDraft || b.dataset.ss === 'start') return;
+  const d = ssDraft, k = b.dataset.ss;
+  let focusSel = '[data-ss="'+k+'"]'+(b.dataset.n ? '[data-n="'+b.dataset.n+'"]' : '')+(b.dataset.folder ? '[data-folder="'+b.dataset.folder+'"]' : '')+(b.dataset.v ? '[data-v="'+b.dataset.v+'"]' : '');
+  if (k === 'interval') d.interval = +b.dataset.n;
+  if (k === 'nomusic') d.music = {kind: 'none'};
+  if (k === 'playlist') d.music = {kind: 'playlist', folder: b.dataset.folder};
+  if (k === 'order') d.shuffle = b.dataset.v === '1';
+  if (k === 'songs') {
+    const lib = (catalog.playlists || []).concat(catalog.music || []).find(t => t.id === b.dataset.folder);
+    const tracks = await tracksOf(b.dataset.folder);
+    renderSlideshowSetup({id: b.dataset.folder, name: lib ? lib.name : '', tracks});
+    const first = $('mbox').querySelector('[data-ss="track"].on') || $('mbox').querySelector('[data-ss="track"]') || $('mbox').querySelector('[data-ss="back"]');
+    if (first) first.focus();
+    return;
+  }
+  if (k === 'track') { d.music = {kind: 'song', folder: b.dataset.folder, track: b.dataset.id, name: b.dataset.name}; focusSel = '[data-ss="songs"][data-folder="'+b.dataset.folder+'"]'; }
+  if (k === 'back') focusSel = '[data-ss="songs"]';
+  renderSlideshowSetup();
+  const again = $('mbox').querySelector(focusSel) || $('mbox').querySelector('[data-ss="start"]');
+  if (again) again.focus();
+});
+
+// Включить отдельный диск альбома: очередь — только его треки.
+async function playMusicPart(i){
+  const top = vstack[vstack.length-1];
+  const part = top && top.tile.seasons && top.tile.seasons[i];
+  if (!part) return;
+  const tracks = await tracksOf(part.id);
+  if (!tracks.length) return;
+  setMusicQueue(tracks, musicShuffle ? Math.floor(Math.random() * tracks.length) : 0);
+  playMusic();
+}
+
+function plural(n, one, few, many){
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few;
+  return many;
+}
+
+// --- продолжить просмотр ---
+
+function loadProgress(){
+  return getJSON('/api/progress').then(r => { progressList = r.items || []; }).catch(() => {});
+}
+
+async function forgetProgress(e){
+  if (!e) return;
+  forgotten = e.file;
+  await fetch(BASE+'/api/progress/'+encodeURIComponent(e.key), {method:'DELETE'}).catch(()=>{});
+  await loadProgress();
+  renderVisual();
+}
+
+async function resumeEntry(e){
+  if (!e) return;
+  plan = null;
+  const cur = queue[qi];
+  // та же серия уже загружена и стоит на паузе — просто вернуться к ней
+  if (cur && cur.id === e.file && v.getAttribute('src')) { showPlayer(); v.play().catch(()=>{}); return; }
+  // пара секунд до места остановки — чтобы вспомнить, на чём прервались
+  const seek = it => { resumeFor = e.position > 0 ? {id: it.id, to: Math.max(0, e.position - 5)} : null; };
+  if (e.kind === 'film') {
+    const r = await getJSON('/api/item?id='+encodeURIComponent(e.file)).catch(() => ({}));
+    if (!r.item) { $('path').textContent = 'Фильм не найден — возможно, его удалили'; return; }
+    if (!playable(r.item)) return transcode(r.item);
+    seek(r.item);
+    queue = [r.item]; qi = 0;
+    playVideo();
+    showPlayer();
+    return;
+  }
+  const r = await getJSON('/api/browse?id='+encodeURIComponent(e.season_id)).catch(() => ({items:[]}));
+  const list = (r.items||[]).filter(x => !x.is_dir);
+  const it = list.find(x => x.id === e.file);
+  if (!it) { $('path').textContent = 'Серия не найдена — возможно, её удалили'; return; }
+  if (!playable(it)) return transcode(it);
+  seek(it);
+  startSeason(list, list.indexOf(it));
+}
+
+// Позиция уходит агенту раз в 15 секунд, на паузе, при выходе из плеера и в
+// конце серии. Что считать досмотренным и какая серия следующая, решает агент.
+let lastSaved = 0;
+function saveProgress(final){
+  const it = queue[qi];
+  if (!it || !isFinite(v.duration) || v.duration <= 0) return Promise.resolve();
+  if (forgotten === it.id) return Promise.resolve();
+  // серию ещё не перемотали на сохранённое место — нельзя затереть его нулём
+  if (resumeFor && resumeFor.id === it.id) return Promise.resolve();
+  lastSaved = Date.now();
+  return fetch(BASE+'/api/progress', {method:'PUT', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({file: it.id, position: final ? v.duration : v.currentTime, duration: v.duration})})
+    .catch(() => {});
+}
+
+// Страницу закрыли или приставку выключили: fetch может не успеть, а
+// sendBeacon браузер доставит и после ухода со страницы.
+function beaconProgress(){
+  const it = queue[qi];
+  if (!it || !isFinite(v.duration) || v.duration <= 0 || !navigator.sendBeacon) return;
+  // на паузе позиция уже сохранена — повторять незачем
+  if (v.paused || forgotten === it.id || (resumeFor && resumeFor.id === it.id)) return;
+  navigator.sendBeacon(BASE+'/api/progress', new Blob([JSON.stringify(
+    {file: it.id, position: v.currentTime, duration: v.duration})], {type: 'application/json'}));
+}
+
+v.addEventListener('loadedmetadata', () => {
+  const it = queue[qi];
+  if (resumeFor && it && resumeFor.id === it.id) {
+    v.currentTime = Math.min(resumeFor.to, Math.max(0, (v.duration || 0) - 10));
+    resumeFor = null;
+  }
+});
+v.addEventListener('timeupdate', () => { if (!v.paused && Date.now() - lastSaved > 15000) saveProgress(false); });
+v.addEventListener('pause', () => { if (!v.ended) saveProgress(false); });
+// снова запустили убранное — значит, смотрят, и место опять нужно помнить
+v.addEventListener('play', () => { const it = queue[qi]; if (it && forgotten === it.id) forgotten = null; });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') beaconProgress(); });
+window.addEventListener('pagehide', beaconProgress);
+
+// --- очередь с главной ---
+
+async function watchQueue(i){
+  if (!watchList.length) return;
+  plan = {i};
+  const entry = watchList[i];
+  if (!entry) { plan = null; return; }
+  const ok = entry.kind === 'film' ? await playFilm(entry) : await playSeriesFrom(entry, 0, 0);
+  // запись не заиграла (удалили файл, не тот формат) — к следующей
+  if (!ok && plan && plan.i === i) return watchQueue(i+1);
+}
+
+// Видеоочередь кончилась. Сначала — следующий сезон того же сериала (это
+// работает и в режиме «Файлы»: включили серию из папки сезона — после неё
+// пойдут серии следующего). Потом — следующая запись очереди с главной.
+let continuing = false;
+async function onQueueEnd(){
+  if (continuing) return;
+  continuing = true;
+  try {
+    const last = queue[queue.length-1];
+    if (last) {
+      const r = await getJSON('/api/next-season?id='+encodeURIComponent(last.id)).catch(() => ({items:[]}));
+      const vids = (r.items||[]).filter(x => !x.is_dir && x.url && playable(x) && hasVideo(x));
+      if (vids.length) {
+        queue = queue.concat(vids);
+        qi++;
+        playVideo();
+        return true;
+      }
+    }
+    if (plan && plan.i + 1 < watchList.length) { await watchQueue(plan.i + 1); return true; }
+    if (plan) plan = null;
+    return false;
+  } finally {
+    continuing = false;
+  }
+}
+
+// --- плеер в визуальном режиме ---
+
+function showPlayer(){
+  if (!musicQueue.length) toggleMusicPick(true);
+  setTimeout(() => updateBackdrop(), 0);
+  if (mode !== 'visual') return;
+  $('app').classList.add('player');
+  $('path').textContent = queue[qi] ? queue[qi].name : 'Плеер';
+  $('up').style.visibility = 'visible';
+  $('bar').firstElementChild.focus();
+}
+
+// Назад из плеера — видео на паузу: смотреть каталог под звук серии никто не
+// хочет. Место сохраняется, на главной появится «Продолжить».
+async function leavePlayer(){
+  hideSkip();
+  $('app').classList.remove('player', 'theater');
+  if (!v.paused) v.pause();
+  await saveProgress(false);
+  await loadProgress();
+  renderVisual();
+}
+
+// --- пространственная навигация стрелками ---
+//
+// В каталоге плитки стоят сеткой, и «вниз» должно вести на плитку под
+// текущей, а не на следующую по порядку в DOM. Ищем ближайший элемент в
+// нужную сторону по координатам.
+
+function focusables(){
+  const scope = !$('qlist').hidden ? [$('qlist')] : !$('amodal').hidden ? [$('amodal')] : !$('admin').hidden ? [$('admin')]
+    : $('app').classList.contains('player') && mode === 'visual'
+    ? [$('head'), $('right')] : mode === 'visual' ? [$('head'), $('visual'), $('vmusic')] : [$('head'), $('left'), $('right')];
+  const out = [];
+  scope.forEach(root => root.querySelectorAll('button,a[href],input,[tabindex="0"]').forEach(el => {
+    const r = el.getBoundingClientRect();
+    if (r.width && r.height && el.offsetParent !== null && getComputedStyle(el).visibility !== 'hidden') out.push(el);
+  }));
+  return out;
+}
+
+function focusFirst(root){
+  const el = root.querySelector('.btn.primary,[tabindex="0"],button');
+  if (el) el.focus({preventScroll:true});
+}
+
+function spatialMove(dir){
+  const cur = document.activeElement;
+  const all = focusables();
+  if (!cur || !all.includes(cur)) { if (all[0]) all[0].focus(); return; }
+  const c = cur.getBoundingClientRect();
+  const cx = c.left + c.width/2, cy = c.top + c.height/2;
+  let best = null, bestScore = Infinity;
+  for (const el of all) {
+    if (el === cur) continue;
+    const r = el.getBoundingClientRect();
+    const x = r.left + r.width/2, y = r.top + r.height/2;
+    const dx = x - cx, dy = y - cy;
+    let main, cross;
+    if (dir === 'ArrowRight') { if (dx <= 4) continue; main = dx; cross = Math.abs(dy); }
+    else if (dir === 'ArrowLeft') { if (dx >= -4) continue; main = -dx; cross = Math.abs(dy); }
+    else if (dir === 'ArrowDown') { if (dy <= 4) continue; main = dy; cross = Math.abs(dx); }
+    else { if (dy >= -4) continue; main = -dy; cross = Math.abs(dx); }
+    // по своей линии дешевле, чем наискосок: иначе «вниз» уезжает в сторону
+    const score = main + cross * 2.5;
+    if (score < bestScore) { bestScore = score; best = el; }
+  }
+  if (best) {
+    best.focus({preventScroll:true});
+    best.scrollIntoView({block:'nearest', inline:'nearest'});
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (!$('app').classList.contains('on')) return;
+  // Окно ввода: буквы, «Backspace» и стрелки влево-вправо принадлежат полю,
+  // Enter — «Сохранить», Escape — «Отмена», вверх-вниз — к кнопкам окна.
+  const typing = e.target && e.target.tagName === 'INPUT';
+  if (typing) {
+    if (e.key === 'Enter') { e.preventDefault(); modalAnswer(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); modalAnswer(false); }
+    else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); spatialMove(e.key); }
+    return;
+  }
+  if (!$('qlist').hidden) {
+    if (e.key.startsWith('Arrow')) { e.preventDefault(); spatialMove(e.key); }
+    else if (e.key === 'Escape' || e.key === 'Backspace') { e.preventDefault(); toggleQueue(false); }
+    else if (e.key === ' ') { e.preventDefault(); musicActions.playpause(); renderQueue(); }
+    return;
+  }
+  if (castOpen()) {
+    e.preventDefault();
+    if (e.key === 'Escape' || e.key === 'Backspace') closeCast();
+    else if ((e.key === 'Enter' || e.key === 'MediaPlayPause') && !e.repeat) castActions.playpause();
+    else if (e.key === 'ArrowLeft') castActions.back();
+    else if (e.key === 'ArrowRight') castActions.fwd();
+    return;
+  }
+  if (!$('amodal').hidden) {
+    if (e.key.startsWith('Arrow')) { e.preventDefault(); spatialMove(e.key); }
+    else if (e.key === 'Escape' || e.key === 'Backspace') { e.preventDefault(); modalAnswer(false); }
+    return;
+  }
+  if (!$('admin').hidden) {
+    if (e.key.startsWith('Arrow')) { e.preventDefault(); spatialMove(e.key); }
+    else if (e.key === 'Escape' || e.key === 'Backspace') {
+      e.preventDefault();
+      if (e.key === 'Backspace' && adminState.screen === 'pin' && adminState.pinInput) { pinKey('del'); return; }
+      adminBack();
+    }
+    else if (adminState.screen === 'pin' && /^[0-9]$/.test(e.key)) { e.preventDefault(); pinKey(e.key); }
+    else if (e.key === 'Enter' && document.activeElement && document.activeElement.matches('[tabindex="0"]')) {
+      e.preventDefault(); document.activeElement.click();
+    }
+    return;
+  }
+  if (photoFull) {
+    const top = vstack[vstack.length-1];
+    const cur = top && top.photos[top.index];
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); photoStep(1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); photoStep(-1); }
+    else if (e.key === 'Enter' || e.key === 'MediaPlayPause') {
+      // OK: у ролика — пауза, в слайд-шоу — пауза показа, у снимка — назад к полосе
+      e.preventDefault();
+      if (e.repeat) return;
+      if (cur && cur.video) { const vid = $('pfvid'); if (vid.paused) vid.play().catch(()=>{}); else vid.pause(); }
+      else if (slideshow) toggleSlideshowPause();
+      else closePhotoFull();
+    }
+    else if (e.key === 'Backspace' || e.key === 'Escape') { e.preventDefault(); closePhotoFull(); }
+    return;
+  }
+  // Во весь экран кнопок не видно, а фокус остаётся на скрытой кнопке панели
+  // (обычно «⛶ Во весь экран»): OK нажимал её и сворачивал видео. Здесь OK —
+  // пауза и старт, как у любого плеера; зажатый OK не должен мигать паузой.
+  // появилась «Пропустить заставку» или «Следующая серия»: OK жмёт её, «Назад» — отказ
+  if (skipKind && (e.key === 'Enter' || e.key === 'Escape' || e.key === 'Backspace') &&
+      ($('app').classList.contains('theater') || document.activeElement === $('skipbtn') || e.key !== 'Enter')) {
+    e.preventDefault();
+    if (!e.repeat) { if (e.key === 'Enter') doSkip(); else cancelSkip(); }
+    return;
+  }
+  if ($('app').classList.contains('theater') && (e.key === 'Enter' || e.key === 'MediaPlayPause')) {
+    e.preventDefault();
+    if (!e.repeat) { actions.playpause(); osd(v.paused ? '⏸' : '▶'); }
+    return;
+  }
+  // Во весь экран стрелки влево-вправо — перемотка на 30 с (зажатая стрелка
+  // мотает дальше), вверх-вниз — ±5 минут или громкость (выбирается в
+  // админке, «Оформление»).
+  if ($('app').classList.contains('theater') && e.key.startsWith('Arrow')) {
+    e.preventDefault();
+    if (e.key === 'ArrowLeft') { actions.back(); osd('⏪ '+posText()); }
+    if (e.key === 'ArrowRight') { actions.fwd(); osd('⏩ '+posText()); }
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      const up = e.key === 'ArrowUp';
+      if (looksCfg.arrows === 'volume') {
+        v.volume = Math.min(1, Math.max(0, Math.round((v.volume + (up ? 0.1 : -0.1)) * 10) / 10));
+        osd('🔊 '+Math.round(v.volume * 100)+'%');
+      } else {
+        v.currentTime = Math.min(Math.max(0, (v.duration || 1e9) - 5), Math.max(0, v.currentTime + (up ? 300 : -300)));
+        osd((up ? '⏩ +5 мин  ' : '⏪ −5 мин  ')+posText());
+      }
+    }
+    return;
+  }
+  if (e.key.startsWith('Arrow')) { e.preventDefault(); spatialMove(e.key); return; }
+  if (e.key === 'Enter' && document.activeElement && document.activeElement.matches('[tabindex="0"]')) {
+    e.preventDefault(); document.activeElement.click(); return;
+  }
+  if (e.key === 'Backspace' || e.key === 'Escape') {
+    if ($('app').classList.contains('theater')) { e.preventDefault(); actions.full(); return; }
+    e.preventDefault(); goBack(); return;
+  }
+  if (e.key === ' ') { e.preventDefault(); actions.playpause(); }
+});
+
+// --- фон ---
+//
+// Общий фон — из админки (картинка, размытие, затемнение). На экране сериала
+// и папки роликов вместо него — их постер, сильно размытый: экран сразу
+// «про этот сериал». В плеере и в «Файлах» фона нет — там он только мешает.
+
+let looksCfg = {background: '', bg_blur: 6, bg_dim: 40, arrows: 'seek'};
+async function loadLooks(){
+  try { Object.assign(looksCfg, await getJSON('/api/settings')); } catch(e) {}
+  backdropKey = '';
+  updateBackdrop();
+}
+
+let backdropKey = '';
+function updateBackdrop(top){
+  top = top === undefined ? vstack[vstack.length-1] : top;
+  const app = $('app');
+  let url = looksCfg.background, blur = looksCfg.bg_blur, dim = looksCfg.bg_dim;
+  if (top && (top.kind === 'series' || top.kind === 'clips' || top.kind === 'info') && top.tile && top.tile.poster) {
+    url = top.tile.poster; blur = 28; dim = 62;
+  }
+  if (mode !== 'visual' || !app.classList.contains('on') || app.classList.contains('player') ||
+      app.classList.contains('theater')) url = '';
+  const key = url + '|' + blur + '|' + dim;
+  if (key === backdropKey) return;
+  backdropKey = key;
+  if (!url) { $('bg').classList.remove('on'); $('bgdim').style.opacity = 0; return; }
+  const pre = new Image();
+  pre.onload = () => {
+    if (backdropKey !== key) return;
+    $('bg').style.backgroundImage = 'url("'+url.replace(/"/g, '%22')+'")';
+    $('bg').style.filter = blur > 0 ? 'blur('+blur+'px)' : '';
+    $('bgdim').style.opacity = dim / 100;
+    $('bg').classList.add('on');
+  };
+  // постера нет — остаётся общий фон
+  pre.onerror = () => {
+    if (backdropKey !== key || url === looksCfg.background) return;
+    backdropKey = ''; updateBackdrop(null);
+  };
+  pre.src = url;
+}
+
+// --- заставка и титры ---
+//
+// Отмечают в одной серии («✂ Заставка и титры» под видео) — работает на весь
+// сериал: отметки хранит агент. Во время заставки — «⏭ Пропустить заставку»
+// (или пропуск сам, если так настроено), на титрах — «Следующая серия через
+// 10 с». Во весь экран OK жмёт эту кнопку, «Назад» — отказывается.
+
+const SKIP_WINDOW = 60;         // сколько секунд предлагаем пропустить заставку
+let curMarks = null, marksFor = null;
+let skipKind = null, skipTimer = null;
+let introDoneFor = null, creditsDoneFor = null;
+
+async function loadMarks(it){
+  marksFor = it.id; curMarks = null;
+  hideSkip();
+  try {
+    const r = await getJSON('/api/marks?file='+encodeURIComponent(it.id));
+    if (marksFor === it.id && r.marks) curMarks = r;
+  } catch(e) {}
+  renderMarkPanel();
+  renderSkipToggle();
+}
+
+// «Пропуск» рядом с «Во весь экран»: выключатель на весь сериал. Отметки
+// остаются на месте, просто кнопку «⏭ Пропустить» и отсчёт следующей серии
+// больше не показываем — иногда заставку хочется смотреть.
+function renderSkipToggle(){
+  const b = $('skiptoggle');
+  const m = curMarks && curMarks.marks;
+  b.hidden = !m || (!m.intro_end && !m.credits_from_end);
+  if (b.hidden) return;
+  b.textContent = m.skip_off ? '⏭ Пропуск: выкл' : '⏭ Пропуск: вкл';
+  b.classList.toggle('on', !m.skip_off);
+}
+
+async function toggleSkip(){
+  const it = queue[qi];
+  if (!it || !curMarks) return;
+  const off = !curMarks.marks.skip_off;
+  const r = await fetch(BASE+'/api/marks', {method:'PUT', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({file: it.id, scope: 'series', skip_off: off})}).then(r => r.json()).catch(() => null);
+  if (!r || !r.marks) return osd('Не вышло сохранить');
+  curMarks = r;
+  if (off) hideSkip();
+  renderSkipToggle();
+  renderMarkPanel();
+  osd(off ? '⏭ Пропуск выключен для этого сериала' : '⏭ Пропуск включён');
+}
+
+function hasNextEpisode(){
+  return qi + 1 < queue.length || (curMarks && curMarks.kind === 'series') || (plan && plan.i + 1 < watchList.length);
+}
+
+v.addEventListener('timeupdate', () => {
+  const it = queue[qi];
+  if (!it || !curMarks || marksFor !== it.id || v.paused) return;
+  const m = curMarks.marks, t = v.currentTime, d = v.duration;
+  if (m.skip_off) return;                 // выключено для этого сериала
+  // Кнопку показываем не всю заставку, а первую минуту: у размеченного «с
+  // самого начала» сериала заставка тянется до конца пролога, и кнопка висела
+  // бы над видео минутами, а зритель, вернувшийся к середине пролога, мог бы
+  // случайно перескочить десять минут серии.
+  const introTo = Math.min(m.intro_end - 1, m.intro_start + SKIP_WINDOW);
+  if (m.intro_end > 0 && t >= m.intro_start && t < introTo && introDoneFor !== it.id) {
+    if (m.auto_skip) { introDoneFor = it.id; v.currentTime = m.intro_end; osd('⏭ Заставка пропущена', true); }
+    else showSkip('intro');
+  } else if (skipKind === 'intro') hideSkip();
+  const credits = m.credits_from_end > 0 && isFinite(d) && d > m.credits_from_end + 60 ? d - m.credits_from_end : 0;
+  // после титров бывает сцена: тогда пропуск ведёт к ней, а не к следующей серии
+  const afterCredits = m.credits_end_from_end > 0 && m.credits_end_from_end < m.credits_from_end ? d - m.credits_end_from_end : 0;
+  if (credits && t >= credits && creditsDoneFor !== it.id && (afterCredits ? t < afterCredits - 1 : hasNextEpisode())) {
+    if (afterCredits) showSkip('after-credits');
+    else if (skipKind !== 'credits') startCountdown();
+  } else if ((skipKind === 'credits' || skipKind === 'after-credits') && credits &&
+             (t < credits || (afterCredits && t >= afterCredits - 1))) hideSkip();   // перемотали или сцена началась
+});
+
+function showSkip(kind){
+  if (skipKind === kind) return;
+  hideSkip();
+  skipKind = kind;
+  $('skipbtn').textContent = kind === 'after-credits' ? '⏭ Пропустить титры' : '⏭ Пропустить заставку';
+  $('skipno').hidden = true;
+  $('skipbox').hidden = false;
+  if (!$('app').classList.contains('theater')) $('skipbtn').focus();
+}
+
+function startCountdown(){
+  hideSkip();
+  skipKind = 'credits';
+  let n = 10;
+  const label = () => { $('skipbtn').textContent = '▶ Следующая серия через '+n+' с'; };
+  label();
+  $('skipno').hidden = false;
+  $('skipbox').hidden = false;
+  if (!$('app').classList.contains('theater')) $('skipbtn').focus();
+  skipTimer = setInterval(() => {
+    if (v.paused) return;          // поставили на паузу — отсчёт ждёт
+    if (--n <= 0) return doSkip();
+    label();
+  }, 1000);
+}
+
+function hideSkip(){
+  clearInterval(skipTimer);
+  skipTimer = null;
+  skipKind = null;
+  $('skipbox').hidden = true;
+}
+
+// Титры — «досмотрено»: агент переводит «Продолжить» на следующую серию, и
+// только потом включается она сама (иначе позиция на титрах записалась бы
+// как недосмотренная).
+function doSkip(){
+  const it = queue[qi];
+  if (!it) return hideSkip();
+  if (skipKind === 'intro') {
+    introDoneFor = it.id;
+    v.currentTime = curMarks.marks.intro_end;
+    hideSkip();
+    return osd('⏭ Заставка пропущена', true);
+  }
+  // после титров есть сцена — прыгаем к ней, а не к следующей серии
+  if (skipKind === 'after-credits') {
+    creditsDoneFor = it.id;
+    v.currentTime = Math.max(0, (v.duration || 0) - curMarks.marks.credits_end_from_end);
+    hideSkip();
+    return osd('⏭ Титры пропущены');
+  }
+  if (skipKind === 'credits') {
+    creditsDoneFor = it.id;
+    hideSkip();
+    saveProgress(true).then(() => {
+      if (qi + 1 < queue.length) { qi++; playVideo(); } else onQueueEnd();
+    });
+  }
+}
+
+function cancelSkip(){
+  const it = queue[qi];
+  if (it && skipKind === 'intro') introDoneFor = it.id;
+  if (it && (skipKind === 'credits' || skipKind === 'after-credits')) creditsDoneFor = it.id;
+  hideSkip();
+}
+
+$('skipbtn').onclick = doSkip;
+$('skipno').onclick = cancelSkip;
+
+// Уровень записи: тот же, что в админке. Сезон предлагаем только если он есть.
+let mkScope = 'series';
+
+function mkScopeName(scope){
+  const d = curMarks || {};
+  if (scope === 'season') return 'сезона «'+(d.season_name || '')+'»';
+  if (scope === 'episode') return 'этой серии';
+  return d.kind === 'series' ? 'всего сериала' : 'этого фильма';
+}
+
+function mkScopeNext(){
+  const order = ['series'].concat(curMarks && curMarks.season_id ? ['season'] : []).concat(['episode']);
+  mkScope = order[(order.indexOf(mkScope) + 1) % order.length];
+}
+
+function renderMarkPanel(){
+  const box = $('markpanel');
+  if (box.hidden) return;
+  const it = queue[qi];
+  if (!it) { box.innerHTML = '<span class="mrow">Ничего не играет</span>'; return; }
+  const m = (curMarks && curMarks.marks) || {};
+  if (mkScope === 'season' && !(curMarks && curMarks.season_id)) mkScope = 'series';
+  box.innerHTML = '<span class="mrow">Заставка: '+(m.intro_end ? fmt(m.intro_start)+' – '+fmt(m.intro_end) : 'не отмечена')+
+    ' · титры: '+(m.credits_from_end ? 'за '+fmt(m.credits_from_end)+' до конца'+
+      (m.credits_end_from_end ? ', кончаются за '+fmt(m.credits_end_from_end) : ' и до конца серии') : 'не отмечены')+'</span>'+
+    '<button class="btn" data-mk="start">⏵ Заставка начинается здесь</button>'+
+    '<button class="btn" data-mk="end">⏹ Заставка кончается здесь</button>'+
+    '<button class="btn" data-mk="credits">🎬 Титры начинаются здесь</button>'+
+    '<button class="btn" data-mk="credits-end">⏹ Титры кончаются здесь</button>'+
+    '<button class="btn" data-mk="credits-to-end">🏁 Титры до конца серии</button>'+
+    '<button class="btn" data-mk="scope">✍ Записывать для '+mkScopeName(mkScope)+'</button>'+
+    '<button class="btn'+(m.auto_skip ? ' on' : '')+'" data-mk="auto">'+(m.auto_skip ? '☑' : '☐')+' Пропускать заставку сам</button>'+
+    '<button class="btn'+(m.skip_off ? '' : ' on')+'" data-mk="off">'+(m.skip_off ? '☐' : '☑')+' Предлагать пропуск</button>'+
+    '<button class="btn" data-mk="reset">Сбросить у '+mkScopeName(mkScope)+'</button>';
+}
+
+$('markpanel').addEventListener('click', async e => {
+  const b = e.target.closest('[data-mk]');
+  const it = queue[qi];
+  if (!b || !it) return;
+  const t = v.currentTime || 0, d = v.duration || 0;
+  const m = (curMarks && curMarks.marks) || {};
+  if (b.dataset.mk === 'scope') {
+    mkScopeNext();
+    renderMarkPanel();
+    const again = $('markpanel').querySelector('[data-mk="scope"]');
+    if (again) again.focus();
+    return;
+  }
+  const body = {file: it.id, scope: mkScope};
+  switch (b.dataset.mk) {
+    case 'start': body.intro_start = t; break;
+    case 'end': body.intro_end = t; introDoneFor = it.id; break;     // отметили — в этой серии уже пропущено
+    case 'credits':
+      if (!d) return;
+      body.credits_from_end = d - t;
+      body.credits_end_from_end = 0;   // где кончаются — отдельная кнопка, старое значение не в счёт
+      creditsDoneFor = it.id;
+      break;
+    case 'credits-end': if (!d) return; body.credits_end_from_end = d - t; break;
+    case 'credits-to-end': body.credits_end_from_end = 0; break;
+    case 'auto': body.auto_skip = !m.auto_skip; break;
+    case 'off': body.scope = 'series'; body.skip_off = !m.skip_off; break;
+    case 'reset': body.reset = true; break;
+  }
+  const r = await fetch(BASE+'/api/marks', {method:'PUT', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body)}).then(r => r.json()).catch(() => null);
+  if (r && r.marks) curMarks = r;
+  const key = b.dataset.mk;
+  renderMarkPanel();
+  renderSkipToggle();
+  const again = $('markpanel').querySelector('[data-mk="'+key+'"]');
+  if (again) again.focus();
+});
+
+// --- таймер сна ---
+//
+// «🌙 Сон» по кругу: выкл → 15 → 30 → 60 → 90 → 120 → 180 минут → после этой серии. Время
+// вышло — звук за 15 секунд тихо уходит, видео и музыка встают на паузу, и
+// «Музыка на паузе» при этом не включается.
+
+const SLEEP_STEPS = [0, 15, 30, 60, 90, 120, 180, 'ep'];
+let sleepMode = 0, sleepAt = 0, sleeping = false;
+
+function renderSleep(){
+  let text = '🌙 Сон: выкл';
+  if (sleepMode === 'ep') text = '🌙 Сон: после серии';
+  else if (sleepAt) text = '🌙 Сон: через '+Math.max(1, Math.ceil((sleepAt - Date.now()) / 60000))+' мин';
+  $('sleepbtn').textContent = text;
+  $('sleepbtn').classList.toggle('on', !!sleepMode);
+}
+
+function setSleep(step){
+  sleepMode = step;
+  sleepAt = typeof step === 'number' && step > 0 ? Date.now() + step * 60000 : 0;
+  renderSleep();
+}
+
+function goToSleep(){
+  setSleep(0);
+  if (sleeping) return;
+  sleeping = true;
+  const v0 = v.volume, a0 = a.volume;
+  let k = 30;
+  const fade = setInterval(() => {
+    k--;
+    v.volume = v0 * k / 30;
+    a.volume = a0 * k / 30;
+    if (k > 0) return;
+    clearInterval(fade);
+    if (!v.paused) v.pause();
+    if (!a.paused) a.pause();
+    // громкость на место: утром включат — не должно быть тишины
+    setTimeout(() => { v.volume = v0; a.volume = a0; sleeping = false; }, 300);
+    osd('🌙 Спокойной ночи', true);
+  }, 500);
+}
+
+setInterval(() => {
+  if (sleepAt && Date.now() >= sleepAt) goToSleep();
+  else if (sleepAt) renderSleep();
+}, 5000);
+
+// Короткая подсказка поверх видео во весь экран: панели там не видно, а
+// понять, куда перемотали, надо.
+let osdTimer = null;
+const posText = () => fmt(v.currentTime) + (isFinite(v.duration) && v.duration > 0 ? ' / '+fmt(v.duration) : '');
+function osd(text){
+  const el = $('osd');
+  el.textContent = text;
+  el.classList.add('on');
+  clearTimeout(osdTimer);
+  osdTimer = setTimeout(() => el.classList.remove('on'), 1500);
+}
+
+// --- воспроизведение ---
+
+function playVideo(){
+  const it = queue[qi];
+  if (!it) return;
+  loadMarks(it);
+  a.pause();                    // видео и музыка одновременно не звучат
+  v.src = it.url;
+  v.play().catch(e => {
+    // переключение серии обрывает прошлый play() — это не ошибка, и затирать
+    // ею название уже новой серии нельзя
+    if (e.name === 'AbortError' || queue[qi] !== it) return;
+    $('now').firstElementChild.textContent = 'Не запустилось: '+e.message;
+  });
+  $('now').firstElementChild.textContent = it.name + '  ('+(qi+1)+' из '+queue.length+')';
+  if (mode === 'visual' && $('app').classList.contains('player')) $('path').textContent = it.name;
+  updateMediaSession();
+  updateMusicLine();
+  sendState();
+}
+
+// Media Session отдаёт очередь системе: встроенный плеер приставки и её
+// собственные кнопки начинают листать серии сами. Без него «следующая серия»
+// живёт только внутри страницы, а во весь экран страница уже не видна.
+function updateMediaSession(){
+  if (!('mediaSession' in navigator)) return;
+  const it = queue[qi];
+  if (!it) return;
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: it.name, artist: $('path').textContent, album: 'Habits TV' });
+  } catch(e) {}
+  const set = (name, fn) => { try { navigator.mediaSession.setActionHandler(name, fn); } catch(e){} };
+  set('play', () => v.play());
+  set('pause', () => v.pause());
+  set('previoustrack', qi > 0 ? actions.prev : null);
+  // «следующая» есть всегда: за концом очереди может быть следующий сезон
+  set('nexttrack', actions.next);
+  set('seekbackward', actions.back);
+  set('seekforward', actions.fwd);
+  set('seekto', d => { if (d.seekTime != null) v.currentTime = d.seekTime; });
+}
+
+function playMusic(){
+  const it = musicQueue[mi];
+  if (!it) return;
+  cancelFade();
+  // видео НЕ трогаем — только пауза: место в серии сохраняется в самом
+  // элементе, и возврат к просмотру мгновенный
+  if (!v.paused) v.pause();
+  a.src = it.url;
+  a.play().catch(()=>{});
+  updateMusicLine();
+}
+
+function setMusicQueue(list, idx){
+  cancelFade();
+  musicQueue = list;
+  buildOrder(idx);
+}
+
+// Порядок игры с текущим треком на своём месте: включили перемешивание
+// посреди трека — он доигрывает, дальше идут остальные вперемешку.
+function buildOrder(current){
+  const n = musicQueue.length;
+  morder = [...Array(n).keys()];
+  if (musicShuffle && n > 1) {
+    const rest = morder.filter(i => i !== current);
+    for (let i = rest.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [rest[i], rest[j]] = [rest[j], rest[i]];
+    }
+    morder = current >= 0 && current < n ? [current, ...rest] : rest;
+  }
+  mpos = Math.max(0, morder.indexOf(current));
+  mi = n ? morder[mpos] : -1;
+}
+
+// Шаг по очереди. auto — трек доиграл сам: тогда решает режим повтора.
+// Руками «⏭» с последнего трека идёт на первый только в режиме «весь
+// плейлист»; иначе остаётся на месте, как раньше.
+function musicStep(dir, auto){
+  const n = morder.length;
+  if (!n) return false;
+  if (auto && musicRepeat === 'one') { a.currentTime = 0; a.play().catch(()=>{}); return true; }
+  let p = mpos + dir;
+  if (p >= n || p < 0) {
+    if (musicRepeat !== 'all') return false;
+    if (p >= n && musicShuffle && n > 1) {
+      // новый круг вперемешку, но не с того же трека, что только что играл
+      const last = mi;
+      buildOrder(-1);
+      if (morder[0] === last) morder.push(morder.shift());
+      p = 0;
+    } else {
+      p = (p + n) % n;
+    }
+  }
+  mpos = p;
+  mi = morder[mpos];
+  playMusic();
+  return true;
+}
+
+const REPEAT_LABEL = {once:'➡ Один раз', all:'🔁 Весь плейлист', one:'🔂 Один трек'};
+function renderMusicModes(){
+  document.querySelectorAll('[data-m="repeat"]').forEach(b => {
+    b.textContent = REPEAT_LABEL[musicRepeat];
+    b.title = 'Как играть: один раз, весь плейлист по кругу или один трек по кругу';
+    b.classList.toggle('on', musicRepeat !== 'once');
+  });
+  document.querySelectorAll('[data-m="fade"]').forEach(b => {
+    b.textContent = '〰 Плавно';
+    b.title = musicFade ? 'Плавный переход между треками: включён' : 'Плавный переход между треками: выключен';
+    b.classList.toggle('on', musicFade);
+  });
+  document.querySelectorAll('[data-m="shuffle"]').forEach(b => {
+    b.textContent = musicShuffle ? '🔀' : '🔢';
+    b.title = musicShuffle ? 'Случайный порядок' : 'Прямой порядок';
+    b.classList.toggle('on', musicShuffle);
+  });
+}
+
+function updateMusicLine(){
+  const it = musicQueue[mi];
+  const text = !it ? 'Музыка: не выбрана' : (a.paused ? 'Музыка на паузе: ' : 'Музыка: ') + it.name;
+  $('mtitle').textContent = text;
+  $('vmtitle').textContent = text;
+  $('vmusic').classList.toggle('on', !!it);
+  $('app').classList.toggle('music-on', !!it);
+  updateQueueProgress();
+  markPlayingRow();
+  if (!$('qlist').hidden) renderQueue();
+}
+
+// --- окно очереди ---
+//
+// «☰ Плейлист» на панели музыки: что играет сейчас и что дальше, текущий
+// трек выделен, внизу — сколько трека прошло. Любую строку можно включить.
+
+function toggleQueue(force){
+  const box = $('qlist');
+  const show = force !== undefined ? force : box.hidden;
+  if (!show) { box.hidden = true; return; }
+  if (!musicQueue.length) return osd('🎵 Музыка не выбрана');
+  renderQueue();
+  box.hidden = false;
+  const cur = $('qbody').querySelector('.qrow.cur') || $('qbody').firstElementChild;
+  if (cur) { cur.focus({preventScroll:true}); cur.scrollIntoView({block:'center'}); }
+}
+
+function renderQueue(){
+  const order = morder.length ? morder : musicQueue.map((_, i) => i);
+  $('qsub').textContent = order.length + ' ' + plural(order.length,'трек','трека','треков') +
+    (musicShuffle ? ' · 🔀' : '') + ' · ' + REPEAT_LABEL[musicRepeat];
+  $('qbody').innerHTML = order.map((qi, pos) => {
+    const it = musicQueue[qi];
+    if (!it) return '';
+    const cur = pos === mpos;
+    return '<button class="qrow'+(cur ? ' cur' : '')+'" data-qi="'+pos+'">'+
+      '<span class="n">'+(cur ? (a.paused ? '⏸' : '♪') : (pos + 1))+'</span>'+
+      '<span class="nm">'+escapeHtml(it.name.replace(/\.[^.]+$/, ''))+'</span></button>';
+  }).join('');
+  updateQueueProgress();
+}
+
+// Прогресс трека: тонкой полоской на самой панели музыки (видно всегда, пока
+// что-то играет) и подробно — в окне очереди.
+function updateQueueProgress(){
+  const d = a.duration, t = a.currentTime || 0;
+  const known = isFinite(d) && d > 0;
+  const pct = known ? Math.min(100, t / d * 100) : 0;
+  const width = (musicQueue.length && known ? pct.toFixed(1) : 0)+'%';
+  $('vmprog').style.width = width;
+  $('mprog').style.width = width;
+  if ($('qlist').hidden) return;
+  $('qfill').style.width = pct.toFixed(1)+'%';
+  $('qnow').textContent = fmt(t);
+  $('qleft').textContent = known ? fmt(d) : '—';
+  $('qpct').textContent = known ? Math.round(pct)+'%' : '';
+}
+
+onAudio('timeupdate', updateQueueProgress);
+
+$('qlist').addEventListener('click', e => {
+  const row = e.target.closest('[data-qi]');
+  if (row) {
+    mpos = +row.dataset.qi;
+    mi = morder.length ? morder[mpos] : mpos;
+    playMusic();
+    return renderQueue();
+  }
+  const b = e.target.closest('[data-q]');
+  if (!b) return;
+  if (b.dataset.q === 'close') return toggleQueue(false);
+  if (b.dataset.q === 'playpause') { musicActions.playpause(); renderQueue(); }
+});
+
+// У музыки свои кнопки: видео при этом остаётся ровно там, где стояло —
+// его элемент не трогаем, поэтому возврат к просмотру мгновенный.
+const musicActions = {
+  playpause(){
+    if (!musicQueue.length) return;
+    if (a.paused){ if (!v.paused) v.pause(); a.play().catch(()=>{}); }
+    else a.pause();
+  },
+  stop(){ cancelFade(); a.pause(); a.currentTime = 0; updateMusicLine(); },
+  fade(){
+    musicFade = !musicFade;
+    store.set('htv.mfade', musicFade);
+    if (!musicFade) cancelFade();
+    renderMusicModes();
+  },
+  prev(){ musicStep(-1, false); },
+  next(){ musicStep(1, false); },
+  repeat(){
+    musicRepeat = {once:'all', all:'one', one:'once'}[musicRepeat];
+    store.set('htv.mrepeat', musicRepeat);
+    renderMusicModes();
+  },
+  pick(){ toggleMusicPick(); },
+  queue(){ toggleQueue(); },
+  shuffle(){
+    musicShuffle = !musicShuffle;
+    store.set('htv.mshuffle', musicShuffle);
+    if (musicQueue.length) buildOrder(mi);
+    renderMusicModes();
+  },
+};
+renderMusicModes();
+
+v.addEventListener('timeupdate', () => {
+  $('pos').textContent = fmt(v.currentTime)+' / '+fmt(v.duration);
+});
+v.addEventListener('ended', async () => {
+  saveProgress(true);   // досмотрено — агент переведёт запись на следующую серию
+  hideSkip();
+  if (sleepMode === 'ep') {
+    // «после этой серии» — дальше не идём
+    setSleep(0);
+    if (!a.paused) a.pause();
+    osd('🌙 Серия закончилась — спокойной ночи', true);
+    return;
+  }
+  if (qi+1 < queue.length){ qi++; playVideo(); return; }
+  const more = await onQueueEnd();
+  if (more) return;
+  // досмотрели всё — «Продолжить» на главной больше не нужно
+  queue = []; qi = -1;
+  $('now').firstElementChild.textContent = 'Ничего не играет';
+  sendState();
+  if (mode === 'visual' && $('app').classList.contains('player')) leavePlayer();
+});
+onAudio('ended', () => { if (fadeTo) return finishFade(); if (!musicStep(1, true)) updateMusicLine(); });
+
+// --- плавный переход между треками ---
+//
+// За FADE секунд до конца трека следующий начинает играть на втором элементе:
+// громкость одного уходит, другого приходит. Когда старый доиграл, роли
+// меняются. Пауза посреди перехода отменяет его — старый трек доиграет сам.
+// В режиме «один трек» и на последнем треке «один раз» перехода нет.
+
+
+function nextMusicPos(){
+  const n = morder.length;
+  if (!n || musicRepeat === 'one') return -1;
+  if (mpos + 1 < n) return mpos + 1;
+  return musicRepeat === 'all' ? 0 : -1;
+}
+
+onAudio('timeupdate', () => {
+  const d = a.duration, rem = d - a.currentTime;
+  if (!musicFade || a.paused || !isFinite(d) || d < FADE * 3) return;
+  if (!fadeTo && rem <= FADE) {
+    const p = nextMusicPos();
+    const it = p >= 0 && musicQueue[morder[p]];
+    if (!it) return;
+    const el = audios.find(x => x !== a);
+    musicVol = a.volume || musicVol;
+    el.src = it.url;
+    el.volume = 0;
+    el.play().catch(() => {});
+    fadeTo = {el, pos: p};
+  }
+  if (fadeTo) {
+    const k = Math.max(0, Math.min(1, rem / FADE));
+    a.volume = musicVol * k;
+    fadeTo.el.volume = musicVol * (1 - k);
+    // Трек кончился — меняем элементы местами сами, не дожидаясь событий:
+    // Chrome в конце присылает ещё и «паузу», а она отменяла переход, и
+    // следующий трек начинался заново с нуля.
+    if (rem <= 0.25) finishFade();
+  }
+});
+
+function finishFade(){
+  const old = a, f = fadeTo;
+  fadeTo = null;
+  a = f.el;
+  a.volume = musicVol;
+  mpos = f.pos;
+  mi = morder[mpos];
+  old.pause();
+  old.removeAttribute('src');
+  old.volume = musicVol;
+  updateMusicLine();
+  sendState();
+}
+
+function cancelFade(){
+  if (!fadeTo) return;
+  const el = fadeTo.el;
+  fadeTo = null;
+  el.pause();
+  el.removeAttribute('src');
+  a.volume = musicVol;
+}
+
+// --- выбор музыки в панели плеера ---
+//
+// Смотрят фильм, хотят музыку, а очереди нет — раньше играть было нечего:
+// музыку выбирали только в каталоге. Теперь папки музыки — кнопками прямо в
+// панели. Пока ничего не выбрано, список открыт сам.
+
+// Откуда брать музыку: свои плейлисты и папки музыки.
+async function musicLibs(){
+  if (!(catalog.music || []).length && !(catalog.playlists || []).length) {
+    try { catalog = await getJSON('/api/catalog'); } catch(e) {}
+  }
+  return (catalog.playlists || []).concat(catalog.music || []);
+}
+
+async function toggleMusicPick(force){
+  const box = $('mpick');
+  const show = force !== undefined ? force : box.hidden;
+  if (!show) { box.hidden = true; return; }
+  const libs = await musicLibs();
+  box.innerHTML = '<span class="lbl">'+(musicQueue.length ? 'Сменить музыку:' : 'Музыка не выбрана — выберите папку:')+'</span>'+
+    (libs.length ? libs.map((t, i) =>
+      '<button class="btn" data-mlib="'+i+'">'+(t.kind === 'playlist' ? '🎶 ' : '🎵 ')+escapeHtml(t.name)+' · '+t.count+'</button>'+
+      // у альбома с подпапками можно взять и отдельную часть
+      ((t.seasons||[]).map((d, j) => '<button class="btn" data-mlib="'+i+'" data-mpart="'+j+'">↳ '+escapeHtml(d.name)+' · '+d.count+'</button>').join(''))
+    ).join('') : '<span class="lbl">Музыкальных папок нет</span>');
+  box.hidden = false;
+}
+
+$('mpick').addEventListener('click', async e => {
+  const b = e.target.closest('[data-mlib]');
+  if (!b) return;
+  const t = (await musicLibs())[+b.dataset.mlib];
+  if (!t) return;
+  const part = b.dataset.mpart !== undefined && (t.seasons||[])[+b.dataset.mpart];
+  const tracks = await tracksOf(part ? part.id : t.id);
+  if (!tracks.length) { $('mtitle').textContent = 'В папке «'+(part ? part.name : t.name)+'» нет треков, которые играют'; return; }
+  setMusicQueue(tracks, musicShuffle ? Math.floor(Math.random() * tracks.length) : 0);
+  $('mpick').hidden = true;
+  // идёт фильм — только выбираем (заиграет по ▶ или на паузе с галочкой);
+  // видео стоит — играем сразу
+  if (!v.paused) { a.src = musicQueue[mi].url; updateMusicLine(); }
+  else playMusic();
+  const first = $('mbar').querySelector('[data-m="playpause"]');
+  if (first) first.focus();
+});
+
+// --- музыка на паузе ---
+//
+// Поставили видео на паузу, смотря его, — заиграла музыка; видео снова пошло —
+// музыка встала (на паузу: в следующий раз продолжит с того же места).
+// Паузы, которые ставит сама страница, не в счёт: выход из плеера в каталог,
+// конец серии, «⏹», включение музыки руками.
+
+function setMusicOnPause(on){
+  musicOnPause = on;
+  try { sessionStorage.setItem('htv.musicOnPause', on ? '1' : '0'); } catch(e) {}
+  const b = $('musicpause');
+  b.textContent = (on ? '☑' : '☐') + ' Музыка на паузе';
+  b.classList.toggle('on', on);
+  // включили, когда видео уже стоит, — музыка сразу
+  if (on && v.paused && watchingVideo()) pauseMusicStart();
+}
+
+function watchingVideo(){
+  if (!v.getAttribute('src') || v.ended || sleeping || casting) return false;
+  if (mode === 'visual') return $('app').classList.contains('player') || $('app').classList.contains('theater');
+  return true;
+}
+
+let musicFetching = false;
+async function pauseMusicStart(){
+  // событие паузы приходит с опозданием: видео могли уже снова запустить
+  if (!v.paused || !a.paused || musicFetching) return;
+  if (!musicQueue.length) {
+    // очереди ещё нет — первая музыкальная библиотека, в выбранном порядке
+    musicFetching = true;
+    try {
+      const lib = (await musicLibs())[0];
+      if (!lib) return;
+      const tracks = await tracksOf(lib.id);
+      // пока грузили, видео могли снова запустить или галочку снять
+      if (!tracks.length || !musicOnPause || !v.paused || !a.paused) return;
+      setMusicQueue(tracks, musicShuffle ? Math.floor(Math.random() * tracks.length) : 0);
+      playMusic();
+    } finally {
+      musicFetching = false;
+    }
+    return;
+  }
+  if (!a.getAttribute('src')) return playMusic();
+  a.play().catch(()=>{});
+  updateMusicLine();
+}
+
+v.addEventListener('pause', () => { if (musicOnPause && watchingVideo()) pauseMusicStart(); });
+v.addEventListener('play', () => { if (musicOnPause && !a.paused) a.pause(); });
+onAudio('play', updateMusicLine);
+onAudio('pause', e => {
+  // «пауза» в конце трека (так делает Chrome) — не повод отменять переход
+  if (fadeTo && !e.target.ended) cancelFade();
+  updateMusicLine();
+});
+
+const actions = {
+  playpause(){ if (!v.src) return; if (v.paused) v.play(); else v.pause(); },
+  stop(){
+    saveProgress(false);
+    v.pause(); v.removeAttribute('src'); v.load();
+    queue = []; qi = -1; plan = null;
+    $('now').firstElementChild.textContent='Ничего не играет';
+    if (mode === 'visual') leavePlayer();
+  },
+  back(){ v.currentTime = Math.max(0, v.currentTime-30); },
+  fwd(){ v.currentTime = Math.min(v.duration||1e9, v.currentTime+30); },
+  musicpause(){ setMusicOnPause(!musicOnPause); },
+  marks(){ $('markpanel').hidden = !$('markpanel').hidden; renderMarkPanel(); },
+  skiptoggle(){ toggleSkip(); },
+  sleep(){
+    const i = SLEEP_STEPS.indexOf(sleepMode);
+    setSleep(SLEEP_STEPS[(i + 1) % SLEEP_STEPS.length]);
+  },
+  prev(){ if (qi>0){ saveProgress(false); qi--; playVideo(); } },
+  next(){ saveProgress(false); if (qi+1<queue.length){ qi++; playVideo(); } else onQueueEnd(); },
+  full(){
+    // Свой режим на CSS — основной: Fullscreen API в вебвью приставки не
+    // отрабатывает, а команда с пульта вообще не жест на телевизоре, и
+    // браузер её отклонил бы. Родной полный экран пробуем следом, «в подарок».
+    if (mode === 'visual' && queue[qi]) $('app').classList.add('player');
+    const on = $('app').classList.toggle('theater');
+    try {
+      if (on && v.requestFullscreen) v.requestFullscreen().catch(()=>{});
+      else if (!on && document.fullscreenElement) document.exitFullscreen();
+    } catch(e) {}
+  },
+};
+document.querySelectorAll('[data-m]').forEach(b => { b.onclick = () => musicActions[b.dataset.m](); });
+$('bar').querySelectorAll('button').forEach(b => { b.onclick = () => actions[b.dataset.a](); });
+setMusicOnPause(musicOnPause);
+
+// --- перекодирование ---
+
+// Приставка играет только MP4. MKV и AVI сюда и попадают: молча ничего не
+// делать нельзя — иначе нажатие выглядит как сломанное.
+async function transcode(it){
+  $('jobs').innerHTML = '<div class="job">Ставлю в очередь: '+escapeHtml(it.name)+'…</div>';
+  if (mode === 'visual') $('path').textContent = 'Перекодирую: '+it.name+' — прогресс в режиме «Файлы»';
+  const r = await fetch(BASE+'/api/jobs', {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({id: it.id})}).then(r=>r.json()).catch(e=>({error:String(e)}));
+  if (r.error) $('jobs').innerHTML = '<div class="job warn">'+escapeHtml(r.error)+'</div>';
+  else pollJobs();
+}
+
+// --- связь с пультом ---
+//
+// Прод здесь только шина: он пересылает JSON и ничего о нём не знает. Списки
+// папок приставка берёт у своего агента по локальной сети и отдаёт пульту
+// сама, поэтому пути файлов и медиа через сервер не идут.
+
+const ROOM = '{{ROOM}}', HUB = '{{HUB}}';
+let hub = null, hubTimer = null;
+
+function hubConnect(){
+  if (!HUB || !ROOM) return;
+  try { hub = new WebSocket(HUB + '?room=' + encodeURIComponent(ROOM)); }
+  catch(e) { return hubRetry(); }
+  hub.onopen = () => { sendState(); sendJobs(); };
+  hub.onclose = hubRetry;
+  hub.onerror = () => { try { hub.close(); } catch(e){} };
+  hub.onmessage = async e => {
+    let m; try { m = JSON.parse(e.data); } catch(err) { return; }
+    if (m.t === 'code') return showCode(m.code);
+    if (m.t === 'screen') return setScreen(m.id);
+    if (m.t === 'presence') return showScreens(m.screens);
+    await onRemote(m);
+  };
+}
+
+// Код показываем в двух местах: крупно на экране разблокировки и мелко в углу,
+// чтобы подключить второй телефон, не выходя из плеера.
+let lastCode = '';
+function showCode(code){
+  lastCode = code || lastCode;
+  const pretty = lastCode ? lastCode.slice(0,4) + ' ' + lastCode.slice(4) : '…';
+  $('code').textContent = pretty;
+  $('codeline').textContent = 'код: ' + pretty + screenLabel;
+  $('corner').textContent = 'код: ' + pretty + screenLabel;
+}
+// Приставка стоит включённой сутками, а вайфай и прод перезапускаются:
+// без переподключения пульт замолкал бы навсегда после первой же икоты.
+function hubRetry(){
+  clearTimeout(hubTimer);
+  hubTimer = setTimeout(hubConnect, 4000);
+}
+// Свой номер экрана. У одного агента плееров может быть несколько (телевизор
+// и компьютер) — они сидят в одной комнате и раньше отвечали пульту наперебой,
+// а команды получали оба. Теперь каждый ответ подписан номером, и пульт
+// выбирает, с каким экраном говорит.
+let screenID = '';
+
+function setScreen(id){
+  screenID = id || '';
+  hubSend({t:'iam', name: screenName()});
+  sendState();
+}
+
+// Плееров у одного агента может быть несколько. Когда их больше одного,
+// показываем рядом с кодом, какой это экран: иначе непонятно, каким из них
+// управляет пульт.
+let screenLabel = '';
+function showScreens(list){
+  const many = Array.isArray(list) && list.length > 1;
+  const me = many && list.find(x => x.id === screenID);
+  screenLabel = me ? ' · ' + (me.name || 'экран') : '';
+  showCode(lastCode);
+}
+
+function screenName(){
+  if (IN_APP) return 'Приложение на ТВ';
+  return /Android|SmartTV|TV/i.test(navigator.userAgent) ? 'Браузер приставки' : 'Браузер компьютера';
+}
+
+function hubSend(obj){
+  if (hub && hub.readyState === 1) hub.send(JSON.stringify(Object.assign({s: screenID}, obj)));
+}
+
+async function onRemote(m){
+  switch (m.t){
+    case 'hello': sendState(); sendJobs(); break;
+    case 'browse': {
+      // пульт листает библиотеку САМ, экран приставки при этом не трогаем:
+      // выбирать следующую серию, не сбивая текущую картинку, — обычное дело
+      const url = m.id ? '/api/browse?id='+encodeURIComponent(m.id) : '/api/libraries';
+      try {
+        const r = await getJSON(url);
+        const list = m.id ? r.items : (r.libraries||[]).map(l=>({id:l.id,name:l.title,is_dir:true}));
+        hubSend({t:'items', id:m.id||'', items:list||[], error:r.error||''});
+      } catch(err){ hubSend({t:'items', id:m.id||'', items:[], error:String(err)}); }
+      break;
+    }
+    case 'open': {
+      // очередь собирается из того, что прислал пульт: он видит ту же папку.
+      // Куда играть, решает СОДЕРЖИМОЕ файла, а не пожелание пульта: трек без
+      // видеодорожки в видеоплеере — это чёрный экран вместо музыки.
+      const list = (m.items||[]).filter(x=>!x.is_dir && x.url);
+      const it = list.find(x=>x.id===m.id);
+      if (!it) break;
+      startFrom(list, it, m.as === 'music' ? 'music' : '');
+      if (m.as !== 'music' && hasVideo(it)) showPlayer();
+      sendState();
+      break;
+    }
+    case 'cast': showCast(m); break;
+    case 'cast-stop': closeCast(); break;
+    // показ с телефона на экране — кнопки пульта управляют им
+    case 'cmd': if (castOpen() && castActions[m.a]) { castActions[m.a](); sendState(); }
+                else if (actions[m.a]) { actions[m.a](); sendState(); } break;
+    case 'mcmd': if (musicActions[m.a]) { musicActions[m.a](); sendState(); } break;
+    case 'seek': if (isFinite(m.to)) { (castOpen() && !$('castvid').hidden ? $('castvid') : v).currentTime = m.to; sendState(); } break;
+    case 'volume': if (isFinite(m.value)) { v.volume = a.volume = musicVol = Math.min(1, Math.max(0, m.value)); sendState(); } break;
+    case 'transcode': if (m.id) { await transcode({id:m.id, name:m.name||''}); sendJobs(); } break;
+  }
+}
+
+// --- «Отправить на ТВ» ---
+//
+// Фото или ролик из галереи телефона — сразу на экран, без библиотеки. Файл
+// лежит на проде пару часов (по случайной ссылке), приставка берёт его
+// оттуда: телефон может быть и не в домашнем вайфае. Адрес — рядом с шиной.
+
+const CAST_BASE = HUB ? HUB.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:').replace(/\/socket$/, '/cast/') : '';
+
+// Сериал на время показа встаёт на паузу и продолжается с того же места,
+// когда показ закрыли. Пауза тут не «зрительская»: музыка по галочке
+// «Музыка на паузе» включаться не должна.
+let casting = false, castResume = false;
+
+function showCast(m){
+  if (!CAST_BASE || !/^[0-9a-f]{16,64}$/.test(m.token || '')) return;
+  const url = CAST_BASE + m.token;
+  if (!casting) castResume = !v.paused && !!v.getAttribute('src');
+  casting = true;
+  if (!v.paused) v.pause();
+  const img = $('castimg'), vid = $('castvid');
+  const isVideo = m.kind === 'video';
+  $('castcap').textContent = '📱 '+(m.name || 'С телефона')+
+    (isVideo ? ' · OK — пауза, ←/→ — 30 с' : '')+' · «Назад» — закрыть'+
+    (castResume ? ' и вернуться к просмотру' : '');
+  if (isVideo) {
+    img.hidden = true; img.removeAttribute('src');
+    vid.hidden = false; vid.src = url; vid.play().catch(() => {});
+  } else {
+    vid.hidden = true; vid.pause(); vid.removeAttribute('src');
+    img.hidden = false; img.src = url;
+  }
+  $('cast').classList.add('on');
+  sendState();
+}
+
+function closeCast(){
+  if (!$('cast').classList.contains('on')) return false;
+  const vid = $('castvid');
+  vid.pause(); vid.removeAttribute('src'); vid.load();
+  $('castimg').removeAttribute('src');
+  $('cast').classList.remove('on');
+  casting = false;
+  // вернулись к тому, что смотрели: место сохранилось в самом элементе
+  if (castResume) { castResume = false; v.play().catch(() => {}); }
+  sendState();
+  return true;
+}
+
+// Кнопки пульта и стрелки, пока на экране показ с телефона: они относятся к
+// нему, а не к сериалу под ним.
+const castActions = {
+  playpause(){ const c = $('castvid'); if (c.hidden) return; if (c.paused) c.play().catch(()=>{}); else c.pause(); },
+  back(){ const c = $('castvid'); if (!c.hidden) { c.currentTime = Math.max(0, c.currentTime - 30); castOSD('⏪'); } },
+  fwd(){ const c = $('castvid'); if (!c.hidden) { c.currentTime = Math.min(c.duration || 1e9, c.currentTime + 30); castOSD('⏩'); } },
+  stop(){ closeCast(); },
+  full(){ /* показ и так во весь экран */ },
+};
+
+function castOSD(sign){
+  const c = $('castvid');
+  osd(sign+' '+fmt(c.currentTime)+(isFinite(c.duration) && c.duration > 0 ? ' / '+fmt(c.duration) : ''));
+}
+
+function castOpen(){ return $('cast').classList.contains('on'); }
+
+function sendState(){
+  const it = queue[qi], mit = musicQueue[mi];
+  const cv = $('castvid');
+  hubSend({t:'state',
+    cast: castOpen() ? {video: !cv.hidden, paused: cv.hidden ? true : cv.paused,
+                        time: cv.currentTime||0, duration: cv.duration||0} : null,
+    video: it ? {name: it.name, index: qi+1, total: queue.length,
+                 paused: v.paused, time: v.currentTime||0, duration: v.duration||0} : null,
+    music: mit ? {name: mit.name, index: mpos+1, total: musicQueue.length,
+                  paused: a.paused} : null,
+    volume: v.volume});
+}
+function sendJobs(){
+  getJSON('/api/jobs').then(r => hubSend({t:'jobs', jobs: r.jobs||[]})).catch(()=>{});
+}
+// раз в секунду во время игры — пульту нужна ползущая позиция, но слать
+// состояние на каждый timeupdate (4 раза в секунду) незачем
+setInterval(() => { if (!v.paused || !a.paused) sendState(); }, 1000);
+v.addEventListener('play', sendState);
+v.addEventListener('pause', sendState);
+onAudio('play', sendState);
+onAudio('pause', sendState);
+hubConnect();
+
+let jobTimer = null;
+async function pollJobs(){
+  clearTimeout(jobTimer);
+  let active = false;
+  try{
+    const r = await getJSON('/api/jobs');
+    const names = {queued:'в очереди', running:'идёт', done:'готово', failed:'ошибка', stopped:'остановлено'};
+    $('jobs').innerHTML = (r.jobs||[]).slice(0,6).map(j => {
+      if (j.status==='queued'||j.status==='running') active = true;
+      return '<div class="job">'+escapeHtml(j.name)+' — '+names[j.status]+
+        (j.status==='running' ? ' '+j.percent+'% ('+(j.speed||'')+')' : '')+
+        (j.error ? ' <span class="warn">'+escapeHtml(j.error)+'</span>' : '')+
+        (j.status==='running' ? '<div class="prog"><i style="width:'+j.percent+'%"></i></div>' : '')+
+        '</div>';
+    }).join('') || '';
+  }catch(e){}
+  // пока что-то считается — раз в 2 секунды, потом раз в 15: опрашивать
+  // впустую незачем, а без опроса прогресс не обновится
+  jobTimer = setTimeout(pollJobs, active ? 2000 : 15000);
+}
+
+// --- обновить ---
+//
+// Каталог страница берёт при входе в визуальный режим, а приставка живёт
+// сутками: залили новый сериал — без кнопки его не видно до перезапуска.
+// Обновляется то, что на экране: каталог, открытый сериал, папка фото,
+// папка в режиме «Файлы». Играющее видео не трогается.
+
+async function refreshAll(){
+  const btn = $('refresh');
+  btn.classList.add('spin');
+  try {
+    if (!$('admin').hidden) return await adminRender();
+    if (mode === 'files') {
+      const top = stack[stack.length-1];
+      if (!top) return await openLibraries();
+      stack.pop();
+      return await openDir(top.id, top.name);
+    }
+    const [cat] = await Promise.all([getJSON('/api/catalog'), loadProgress()]);
+    catalog = cat;
+    // открытый сериал или папку сверяем с новым каталогом: удалили — на главную
+    for (let i = vstack.length - 1; i >= 0; i--) {
+      const x = vstack[i];
+      if (x.kind === 'photos') continue;
+      const fresh = findTile(x.kind+':'+x.tile.id);
+      if (fresh) x.tile = fresh; else vstack.splice(i);
+    }
+    const top = vstack[vstack.length-1];
+    if (top && top.kind === 'photos') {
+      const r = await getJSON('/api/photos?id='+encodeURIComponent(top.tile.id)).catch(() => null);
+      if (!r || !r.photos) vstack.pop();
+      else { top.photos = r.photos; top.dirs = r.dirs || []; top.index = Math.min(top.index, Math.max(0, r.photos.length-1)); }
+    }
+    if (!$('app').classList.contains('player')) renderVisual();
+    if (!$('mpick').hidden) toggleMusicPick(true);
+  } catch(e) {
+    $('path').textContent = 'Не обновилось: '+e.message;
+  } finally {
+    btn.classList.remove('spin');
+  }
+}
+$('refresh').onclick = refreshAll;
+
+// --- окно подтверждения и ввода ---
+
+let modalResolve = null;
+
+function modal(html, focusSel){
+  $('mbox').innerHTML = html;
+  $('amodal').hidden = false;
+  return new Promise(res => {
+    modalResolve = res;
+    const el = $('mbox').querySelector(focusSel || '.btn');
+    if (el) el.focus();
+  });
+}
+
+function modalAnswer(ok){
+  if ($('amodal').hidden) return;
+  const input = $('mbox').querySelector('input');
+  const value = ok ? (input ? input.value : true) : null;
+  $('amodal').hidden = true;
+  const res = modalResolve;
+  modalResolve = null;
+  if (res) res(value);
+  // фокус — обратно туда, где был до окна
+  if (adminState.lastFocus && document.body.contains(adminState.lastFocus)) adminState.lastFocus.focus();
+}
+
+$('mbox').addEventListener('click', e => {
+  const b = e.target.closest('[data-modal]');
+  if (b) modalAnswer(b.dataset.modal === 'ok');
+});
+
+function askConfirm(text, okLabel, danger){
+  adminState.lastFocus = document.activeElement;
+  return modal('<p>'+escapeHtml(text)+'</p><div class="mbtns">'+
+    '<button class="btn" data-modal="cancel">Отмена</button>'+
+    '<button class="btn '+(danger ? 'danger' : 'primary')+'" data-modal="ok">'+escapeHtml(okLabel)+'</button></div>',
+    '[data-modal="cancel"]');
+}
+
+function askText(title, value, hint){
+  adminState.lastFocus = document.activeElement;
+  return modal('<p>'+escapeHtml(title)+'</p><input id="mval" value="'+escapeHtml(value)+'" spellcheck="false">'+
+    (hint ? '<p class="tag">'+escapeHtml(hint)+'</p>' : '')+
+    '<div class="mbtns"><button class="btn" data-modal="cancel">Отмена</button>'+
+    '<button class="btn primary" data-modal="ok">Сохранить</button></div>', '#mval');
+}
+
+// --- админка ---
+//
+// Названия (переименование на диске), удаление через корзину на N дней,
+// обслуживание кэша. PIN вводится один раз на устройстве и хранится в
+// браузере приставки; неверный — спросим снова.
+
+const adminState = {screen: 'pin', tab: 'lib', dir: null, pin: store.get('htv.adminPin', ''),
+  pinInput: '', dirty: false, lastFocus: null, overview: null, items: {}, gen: 0};
+// Ответы приходят не по порядку: переключили вкладку, пока грузилась прошлая, —
+// опоздавший ответ не должен рисовать поверх. Каждая отрисовка берёт номер,
+// устаревшая молча выходит.
+const stale = gen => gen !== adminState.gen;
+
+const SIZE_UNITS = ['Б','КБ','МБ','ГБ','ТБ'];
+function fmtSize(n){
+  let i = 0;
+  while (n >= 1024 && i < SIZE_UNITS.length-1) { n /= 1024; i++; }
+  return (i >= 3 ? n.toFixed(1) : Math.round(n)) + ' ' + SIZE_UNITS[i];
+}
+
+function adStatus(text, kind){
+  const el = $('adstatus');
+  el.textContent = text || '';
+  el.className = kind || '';
+}
+
+async function adminFetch(url, opts){
+  opts = opts || {};
+  const headers = Object.assign({'X-Admin-Pin': adminState.pin}, opts.body ? {'Content-Type':'application/json'} : {});
+  let r;
+  try {
+    r = await fetch(BASE+url, {method: opts.method || 'GET', headers, body: opts.body ? JSON.stringify(opts.body) : undefined});
+  } catch(e) { adStatus('Агент не отвечает: '+e.message, 'err'); return null; }
+  const data = await r.json().catch(() => ({}));
+  if (r.status === 401 || r.status === 429 || (r.status === 403 && data.code === 'disabled')) {
+    if (r.status === 401) { adminState.pin = ''; store.set('htv.adminPin', ''); }
+    showPin(data.error || 'Нужен PIN', data.code === 'disabled');
+    return null;
+  }
+  if (!r.ok) { adStatus(data.error || ('Ошибка '+r.status), 'err'); return null; }
+  return data;
+}
+
+async function openAdmin(){
+  $('admin').hidden = false;
+  adStatus('');
+  adminState.dir = null;
+  if (!adminState.pin) return showPin('');
+  const ok = await adminFetch('/api/admin/check');
+  if (ok) { adminState.screen = 'main'; adminRender(); }
+}
+$('adminBtn').onclick = openAdmin;
+
+function closeAdmin(){
+  $('admin').hidden = true;
+  stopMarkVideo();
+  adminState.marks = null;
+  $('prehear').pause();
+  build.playing = '';
+  if (adminState.dirty) { adminState.dirty = false; refreshAll(); }
+  $('adminBtn').focus();
+}
+
+function adminBack(){
+  if (adminState.screen === 'main' && adminState.tab === 'build' && build.pick) {
+    if (build.pick.stack.length) build.pick.stack.pop(); else build.pick = null;
+    return adminRender();
+  }
+  if (adminState.screen === 'main' && adminState.marks) {
+    const mk = adminState.marks;
+    stopMarkVideo();
+    if (mk.file && (mk.season || mk.isDir)) mk.file = null;   // из редактора — к списку серий
+    else if (mk.season) mk.season = null;                     // из серий — к сезонам
+    else adminState.marks = null;
+    return adminRender();
+  }
+  if (adminState.screen === 'main' && adminState.infoEdit) { adminState.infoEdit = null; return adminRender(); }
+  if (adminState.screen === 'main' && adminState.picker) {
+    const pk = adminState.picker;
+    if (pk.albums.length) pk.albums.pop(); else adminState.picker = null;
+    return adminRender();
+  }
+  if (adminState.screen === 'main' && adminState.tab === 'lib' && adminState.dir) {
+    adminState.dir = adminState.dir.parent || null;
+    return adminRender();
+  }
+  closeAdmin();
+}
+
+// --- PIN ---
+
+function showPin(msg, disabled){
+  adminState.screen = 'pin';
+  adminState.pinInput = '';
+  $('adpath').textContent = '';
+  document.querySelectorAll('[data-adtab]').forEach(b => b.hidden = true);
+  adStatus(msg, msg ? 'err' : '');
+  if (disabled) { $('adbody').innerHTML = ''; $('admin').querySelector('[data-ad="back"]').focus(); return; }
+  const keys = ['1','2','3','4','5','6','7','8','9','del','0','ok'];
+  $('adbody').innerHTML = '<div class="pin"><div>PIN админки</div><div id="pindots"></div><div class="pinpad">'+
+    keys.map(k => '<button class="btn'+(k==='ok'?' primary':'')+'" data-pin="'+k+'">'+(k==='del'?'⌫':k==='ok'?'OK':k)+'</button>').join('')+
+    '</div><div class="tag">PIN задаётся в настройках агента (admin_pin). На этом устройстве его спросят один раз.</div></div>';
+  pinDots();
+  $('adbody').querySelector('[data-pin="1"]').focus();
+}
+
+function pinDots(){ const d = $('pindots'); if (d) d.textContent = adminState.pinInput.replace(/./g, '●') || '····'; }
+
+async function pinKey(k){
+  if (k === 'del') adminState.pinInput = adminState.pinInput.slice(0, -1);
+  else if (k === 'ok') {
+    if (!adminState.pinInput) return;
+    adminState.pin = adminState.pinInput;
+    const ok = await adminFetch('/api/admin/check');
+    if (!ok) return;
+    store.set('htv.adminPin', adminState.pin);
+    adminState.screen = 'main';
+    return adminRender();
+  }
+  else if (adminState.pinInput.length < 12) adminState.pinInput += k;
+  pinDots();
+}
+
+// --- экраны ---
+
+async function adminRender(){
+  if (adminState.screen !== 'main') return;
+  const gen = ++adminState.gen;
+  document.querySelectorAll('[data-adtab]').forEach(b => { b.hidden = false; b.classList.toggle('on', b.dataset.adtab === adminState.tab); });
+  // фокус вернётся на ту же по счёту кнопку: после удаления строки — на соседнюю
+  const before = [...$('adbody').querySelectorAll('button')].indexOf(document.activeElement);
+  if (adminState.marks) await renderAdminMarks();
+  else if (adminState.picker) await renderAdminPicker();
+  else if (adminState.infoEdit) await renderAdminInfo();
+  else if (adminState.tab === 'lib') await (adminState.dir ? renderAdminDir() : renderAdminLib());
+  else if (adminState.tab === 'trash') await renderAdminTrash();
+  else if (adminState.tab === 'looks') await renderAdminLooks();
+  else if (adminState.tab === 'stats') await renderAdminStats();
+  else if (adminState.tab === 'build') await renderAdminBuild();
+  else await renderAdminService();
+  if (stale(gen)) return;
+  const btns = [...$('adbody').querySelectorAll('button')];
+  const target = before >= 0 ? btns[Math.min(before, btns.length-1)] : null;
+  (target || btns[0] || document.querySelector('[data-adtab="'+adminState.tab+'"]')).focus();
+}
+
+const AD_SECTIONS = [['series','Сериалы'],['films','Фильмы'],['clips','Видеоролики'],['photos','Фото и видео'],['music','Музыка']];
+
+function adRow(it, opts){
+  const info = it.size !== undefined ? fmtSize(it.size) + (it.count > 1 && it.kind ? ' · '+it.count : '') : '';
+  const btns = [];
+  if (it.is_dir) btns.push('<button class="btn" data-adopen="'+it.id+'">📂 Файлы</button>');
+  if (it.is_dir && !it.root) btns.push('<button class="btn" data-adinto="'+it.id+'" title="Дозагрузить файлы или архив в эту папку">📥</button>');
+  if (!it.root) btns.push('<button class="btn" data-adrename="'+it.id+'">✏ Имя</button>');
+  if (it.can_poster && !it.root) btns.push('<button class="btn" data-adposter="'+it.id+'">🖼 Постер</button>');
+  if (it.kind || it.is_dir) btns.push('<button class="btn" data-adcover="'+it.id+'" title="Своя обложка: файл или снимок из «Фото»">🎨</button>');
+  if (it.can_poster && !it.root) btns.push('<button class="btn" data-adinfo="'+it.id+'" title="Описание, жанры, рейтинги, актёры">ℹ</button>');
+  if (it.can_poster && !it.root) btns.push('<button class="btn" data-admarks="'+it.id+'" title="Заставка и титры: где показывать «Пропустить»">✂</button>');
+  if (!it.root) btns.push('<button class="btn danger" data-addelete="'+it.id+'">🗑</button>');
+  return '<div class="arow"><div class="ainfo"><b>'+(it.is_dir && !opts ? '' : it.is_dir ? '📁 ' : '')+escapeHtml(it.name)+'</b>'+
+    '<span class="apath">'+escapeHtml(it.path)+'</span></div><span class="asize">'+info+'</span>'+btns.join('')+'</div>';
+}
+
+async function renderAdminLib(){
+  $('adpath').textContent = 'все разделы';
+  $('adbody').innerHTML = '<div class="empty">Загрузка…</div>';
+  const gen = adminState.gen;
+  const r = await adminFetch('/api/admin/overview');
+  if (!r || stale(gen)) return;
+  adminState.overview = r;
+  adminState.items = {};
+  Object.values(r.sections).forEach(l => l.forEach(it => { adminState.items[it.id] = it; }));
+  const zipCard = (kind, title, hint) => r.libraries.some(l => l.kind === kind && l.available)
+    ? '<div class="acard"><div class="ainfo"><b>'+title+'</b><span>'+hint+'</span></div>'+
+      '<button class="btn" data-adzip="'+kind+'">📦 Выбрать ZIP</button></div>' : '';
+  let html =
+    zipCard('music', '🎵 Загрузить альбом музыки',
+      'ZIP-архив с компьютера: папка внутри архива станет альбомом, подпапки — его дисками. Идёт частями, прерванную загрузку можно повторить.')+
+    zipCard('photo', '🖼 Загрузить альбом фото и видео',
+      'ZIP-архив со снимками и роликами: папка внутри архива станет альбомом, подпапки сохранятся.');
+  for (const [key, title] of AD_SECTIONS) {
+    const list = r.sections[key] || [];
+    if (!list.length) continue;
+    html += '<h3>'+title+' · '+list.length+'</h3>' + list.map(it => adRow(it)).join('');
+  }
+  html += '<p class="tag">«🗑» переносит в корзину: через '+r.trash_days+' '+plural(r.trash_days,'день','дня','дней')+
+    ' файлы сотрутся с диска, до этого их можно вернуть. О переносе и стирании придёт сообщение в Telegram.</p>';
+  $('adbody').innerHTML = html || '<div class="empty">Медиатека пуста</div>';
+  document.querySelector('[data-adtab="trash"]').textContent = 'Корзина'+(r.trash_count ? ' · '+r.trash_count : '');
+}
+
+async function renderAdminDir(){
+  const d = adminState.dir;
+  const gen = adminState.gen;
+  const r = await adminFetch('/api/admin/children?id='+encodeURIComponent(d.id));
+  if (stale(gen)) return;
+  if (!r) { adminState.dir = d.parent || null; return; }
+  adminState.items = {};
+  r.items.forEach(it => { adminState.items[it.id] = it; });
+  $('adpath').textContent = r.path;
+  $('adbody').innerHTML = '<div class="acard"><div class="ainfo"><b>📂 '+escapeHtml(r.name)+'</b><span class="apath">'+escapeHtml(r.path)+'</span></div>'+
+    '<button class="btn" data-ad="up">↑ '+(d.parent ? 'Выше' : 'К разделам')+'</button></div>'+
+    (r.items.length ? r.items.map(it => adRow(it, true)).join('') : '<div class="empty">Папка пуста</div>');
+}
+
+function daysLeft(ts){
+  const d = Math.max(0, Math.ceil((ts*1000 - Date.now()) / 86400000));
+  return d ? 'через '+d+' '+plural(d,'день','дня','дней') : 'сегодня';
+}
+function fmtDate(ts){
+  const d = new Date(ts*1000);
+  return String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+' '+
+    String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+
+async function renderAdminTrash(){
+  $('adpath').textContent = 'корзина';
+  const gen = adminState.gen;
+  const r = await adminFetch('/api/admin/trash');
+  if (!r || stale(gen)) return;
+  r.items = r.items || [];
+  document.querySelector('[data-adtab="trash"]').textContent = 'Корзина'+(r.items.length ? ' · '+r.items.length : '');
+  $('adbody').innerHTML = (r.items.length ? r.items.map(e =>
+    '<div class="arow"><div class="ainfo"><b>'+(e.is_dir ? '📁 ' : '')+escapeHtml(e.title)+'</b>'+
+    '<span class="apath">'+escapeHtml(e.orig)+'</span></div>'+
+    '<span class="asize">'+fmtSize(e.size)+'<br>сотрётся '+daysLeft(e.purge_at)+' ('+fmtDate(e.purge_at)+')</span>'+
+    '<button class="btn" data-adrestore="'+e.id+'">↩ Вернуть</button>'+
+    '<button class="btn danger" data-adpurge="'+e.id+'">✖ Стереть</button></div>').join('')
+    : '<div class="empty">Корзина пуста</div>') +
+    '<p class="tag">Удалённое лежит здесь '+r.days+' '+plural(r.days,'день','дня','дней')+', потом стирается с диска само.</p>';
+}
+
+async function renderAdminService(){
+  $('adpath').textContent = 'обслуживание';
+  const gen = adminState.gen;
+  const [r, ov] = await Promise.all([adminFetch('/api/admin/service'), adminFetch('/api/admin/overview')]);
+  if (!r || !ov || stale(gen)) return;
+  const disks = ov.libraries.map(l => {
+    const used = l.total ? (l.total - l.free) / l.total * 100 : 0;
+    return '<div class="acard"><div class="ainfo"><b>'+escapeHtml(l.title)+' <span>· '+l.kind+'</span></b>'+
+      '<span class="apath">'+escapeHtml(l.path)+'</span>'+
+      (l.available ? '<span>свободно '+fmtSize(l.free)+' из '+fmtSize(l.total)+'</span><div class="abar"><i style="width:'+used.toFixed(0)+'%"></i></div>'
+                   : '<span class="warn">папка недоступна (диск не подключён?)</span>')+'</div></div>';
+  }).join('');
+  const card = (title, sub, btn, act, danger) => '<div class="acard"><div class="ainfo"><b>'+title+'</b><span>'+sub+'</span></div>'+
+    (btn ? '<button class="btn'+(danger?' danger':'')+'" data-adsvc="'+act+'">'+btn+'</button>' : '')+'</div>';
+  $('adbody').innerHTML = '<h3>Диски</h3>'+disks+'<h3>Кэш и данные агента</h3>'+
+    card('Копии фото', r.photo_files+' '+plural(r.photo_files,'файл','файла','файлов')+', '+fmtSize(r.photo_bytes)+' — соберутся заново при просмотре', 'Очистить', 'photos-clear')+
+    card('Постеры, которые не нашлись', r.poster_misses+' — повторный поиск раз в сутки', 'Искать сейчас', 'posters-retry')+
+    card('Перекодированные копии', fmtSize(r.transcoded_bytes)+' — по ним играют файлы, не удаляются отсюда', '', '')+
+    card('«Продолжить просмотр»', r.progress+' '+plural(r.progress,'запись','записи','записей'), 'Очистить', 'progress-clear', true)+
+    '<h3>Связь</h3>'+
+    card('Уведомления в Telegram', 'о корзине и стирании; комната «'+escapeHtml(r.room)+'»', 'Отправить проверочное', 'notify-test')+
+    card('PIN на этом устройстве', 'сохранён в браузере приставки', 'Забыть PIN', 'forget-pin');
+}
+
+// --- оформление ---
+
+const BLUR_STEPS = [[0, 'Нет'], [6, 'Слабое'], [14, 'Среднее'], [28, 'Сильное']];
+const DIM_STEPS = [[0, '0%'], [25, '25%'], [45, '45%'], [70, '70%']];
+
+async function renderAdminLooks(){
+  $('adpath').textContent = 'оформление';
+  const gen = adminState.gen;
+  let st;
+  try { st = await getJSON('/api/settings'); } catch(e) { return adStatus('Агент не отвечает', 'err'); }
+  if (stale(gen)) return;
+  const opt = (key, list, cur) => list.map(([v, label]) =>
+    '<button class="btn'+(v === cur ? ' on' : '')+'" data-adlook="'+key+':'+v+'">'+label+'</button>').join('');
+  $('adbody').innerHTML =
+    '<h3>Фон страницы</h3><div class="acard">'+
+      '<div class="abg" style="'+(st.background ? 'background-image:url(\''+escapeHtml(st.background)+'\')' : '')+'"></div>'+
+      '<div class="ainfo"><b>'+(st.background ? 'Свой фон' : 'Без фона')+'</b>'+
+      '<span>Под плитками каталога; на экране сериала вместо него — размытый постер сериала.</span></div>'+
+      '<button class="btn" data-adpick="background">🖼 Выбрать</button>'+
+      (st.background ? '<button class="btn danger" data-adunset="background">✖ Убрать</button>' : '')+'</div>'+
+    '<div class="acard"><div class="ainfo"><b>Размытие фона</b></div>'+opt('bg_blur', BLUR_STEPS, st.bg_blur)+'</div>'+
+    '<div class="acard"><div class="ainfo"><b>Затемнение фона</b><span>чтобы названия читались на пёстрой картинке</span></div>'+opt('bg_dim', DIM_STEPS, st.bg_dim)+'</div>'+
+    '<h3>Плеер</h3>'+
+    '<div class="acard"><div class="ainfo"><b>Стрелки вверх-вниз во весь экран</b></div>'+
+      opt('arrows', [['seek', '±5 минут'], ['volume', 'Громкость']], st.arrows)+'</div>';
+}
+
+// --- выбор картинки: фон или обложка ---
+//
+// С пульта файл не выберешь, поэтому главный путь — снимок из «Фото»: альбомы
+// и снимки стрелками. С ноутбука можно и загрузить файл.
+
+function openPicker(target, id){
+  const it = id ? adminState.items[id] : null;
+  adminState.picker = {target, id, name: it ? it.name : '', albums: []};
+  adminRender();
+}
+
+async function renderAdminPicker(){
+  const pk = adminState.picker, gen = adminState.gen;
+  const what = pk.target === 'background' ? 'фон страницы' : 'обложка «'+pk.name+'»';
+  const albumsTitle = 'Альбомы «Фото и видео»';
+  $('adpath').textContent = what;
+  let head = '<div class="acard"><div class="ainfo"><b>'+escapeHtml(what[0].toUpperCase()+what.slice(1))+'</b>'+
+    '<span>Выберите кадр из альбома ниже или загрузите файл (JPG/PNG — с компьютера, на ТВ выбор файла может не открыться).</span></div>'+
+    '<button class="btn" data-adupload="1">📁 Загрузить файл</button>'+
+    (pk.target === 'cover' ? '<button class="btn danger" data-adunset="cover">✖ Убрать обложку</button>' : '')+
+    '<button class="btn" data-ad="back">← Назад</button></div>';
+  const album = pk.albums[pk.albums.length-1];
+  if (!album) {
+    if (!adminState.overview) adminState.overview = await adminFetch('/api/admin/overview');
+    if (stale(gen)) return;
+    const albums = (adminState.overview && adminState.overview.sections.photos) || [];
+    $('adbody').innerHTML = head + '<h3>'+albumsTitle+'</h3>' + (albums.length ? albums.map(a =>
+      '<div class="arow"><div class="ainfo"><b>🖼 '+escapeHtml(a.name)+'</b><span class="apath">'+a.count+' '+plural(a.count,'файл','файла','файлов')+'</span></div>'+
+      '<button class="btn" data-adalbum="'+a.id+'" data-name="'+escapeHtml(a.name)+'">📂 Открыть</button></div>').join('')
+      : '<div class="empty">В «Фото и видео» пока нет альбомов</div>');
+    return;
+  }
+  const r = await getJSON('/api/photos?id='+encodeURIComponent(album.id)).catch(() => null);
+  if (stale(gen)) return;
+  if (!r || !r.photos) { $('adbody').innerHTML = head + '<div class="empty">Альбом не открылся</div>'; return; }
+  $('adbody').innerHTML = head + '<h3>'+escapeHtml(pk.albums.map(a => a.name).join(' / '))+'</h3>'+
+    (r.dirs || []).map(d => '<div class="arow"><div class="ainfo"><b>📁 '+escapeHtml(d.name)+'</b></div>'+
+      '<button class="btn" data-adalbum="'+d.id+'" data-name="'+escapeHtml(d.name)+'">📂 Открыть</button></div>').join('')+
+    '<div class="agrid">'+r.photos.map(p => '<button class="pth" data-adphoto="'+p.id+'" title="'+escapeHtml(p.name)+'">'+
+      '<img loading="lazy" alt="" src="'+escapeHtml(p.thumb)+'">'+(p.video ? '<span class="vb">▶</span>' : '')+'</button>').join('')+'</div>';
+}
+
+// Картинка выбрана или загружена — отдаём агенту. body: File или {photo_id}.
+async function applyImage(body){
+  const pk = adminState.picker;
+  if (!pk) return;
+  const q = 'target='+pk.target+(pk.id ? '&id='+encodeURIComponent(pk.id) : '');
+  adStatus('Сохраняю…');
+  if (body instanceof Blob) {
+    // файл — частями: перед агентом nginx с пределом 1 МБ на запрос
+    const res = await uploadChunked(body, q, p => adStatus('Загружаю… '+Math.round(p * 100)+'%'));
+    if (!res) return;
+  } else {
+    let r;
+    try {
+      r = await fetch(BASE+'/api/admin/image?'+q, {method: 'POST',
+        headers: {'X-Admin-Pin': adminState.pin, 'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    } catch(e) { return adStatus('Агент не отвечает: '+e.message, 'err'); }
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) return adStatus(data.error || 'Не сохранилось', 'err');
+  }
+  adminState.dirty = true;
+  adminState.picker = null;
+  adStatus(pk.target === 'background' ? 'Фон установлен' : 'Обложка установлена: '+pk.name, 'ok');
+  if (pk.target === 'background') loadLooks();
+  adminRender();
+}
+
+// --- загрузка частями ---
+//
+// Перед агентом nginx, у него предел тела запроса 1 МБ по умолчанию, поэтому
+// файл уходит кусками по 768 КБ. Кусок, который не дошёл, повторяется; если
+// агент говорит «у меня уже столько» (409), продолжаем с его места.
+
+async function uploadChunked(file, finishQuery, onProgress){
+  const start = await adminFetch('/api/admin/upload', {method: 'POST', body: {name: file.name, size: file.size}});
+  if (!start) return null;
+  const chunk = start.chunk || 786432;
+  let off = 0;
+  while (off < file.size) {
+    let done = false;
+    for (let attempt = 1; !done; attempt++) {
+      try {
+        const r = await fetch(BASE+'/api/admin/upload/'+start.id+'?offset='+off,
+          {method: 'PUT', headers: {'X-Admin-Pin': adminState.pin}, body: file.slice(off, off + chunk)});
+        const d = await r.json().catch(() => ({}));
+        if (r.ok || (r.status === 409 && d.size !== undefined)) { off = d.size; done = true; }
+        else throw new Error(d.error || 'ошибка '+r.status);
+      } catch(e) {
+        if (attempt >= 5) { adStatus('Загрузка оборвалась: '+e.message+' — повторите', 'err'); return null; }
+        await new Promise(res => setTimeout(res, 1000 * attempt));
+      }
+    }
+    if (onProgress) onProgress(off / file.size);
+  }
+  adStatus('Обрабатываю…');
+  return adminFetch('/api/admin/upload/'+start.id+'/finish?'+finishQuery, {method: 'POST'});
+}
+
+$('adzip').addEventListener('change', async () => {
+  const f = $('adzip').files[0];
+  $('adzip').value = '';
+  if (!f) return;
+  const kind = adminState.zipKind;
+  const into = kind === 'into' ? adminState.uploadInto : null;
+  const query = into ? 'target=into-zip&id='+encodeURIComponent(into.id) : 'target='+(kind === 'photo' ? 'photo-zip' : 'music-zip');
+  const r = await uploadChunked(f, query, p => adStatus('Загружаю «'+f.name+'»… '+Math.round(p * 100)+'%'));
+  if (!r) return;
+  adminState.dirty = true;
+  if (into) {
+    adStatus('В «'+into.name+'» добавлено '+r.added+' '+plural(r.added,'файл','файла','файлов'), 'ok');
+    if (build.source && build.source.id === into.id) await loadBuildSource(into.id);
+  } else {
+    const photo = kind === 'photo';
+    adStatus('Альбом «'+r.album+'»: '+r.tracks+' '+(photo ? plural(r.tracks,'файл','файла','файлов') : plural(r.tracks,'трек','трека','треков'))+
+      ' — в разделе «'+(photo ? 'Фото и видео' : 'Музыка')+'»', 'ok');
+  }
+  adminRender();
+});
+
+// --- «Инфо» в админке ---
+
+async function renderAdminInfo(){
+  const ie = adminState.infoEdit, gen = adminState.gen;
+  $('adpath').textContent = 'описание «'+ie.name+'»';
+  if (ie.info === undefined) {
+    $('adbody').innerHTML = '<div class="empty">Загрузка… (если описания ещё нет — ищу в интернете)</div>';
+    const r = await getJSON('/api/info?id='+encodeURIComponent(ie.id)).catch(() => ({}));
+    if (stale(gen)) return;
+    ie.info = r.info || null;
+  }
+  const inf = ie.info || {};
+  const field = (key, label, value) => '<div class="arow"><div class="ainfo"><b>'+label+'</b><span class="apath">'+
+    (value ? escapeHtml(value) : '—')+'</span></div><button class="btn" data-adinfoedit="'+key+'">✏</button></div>';
+  $('adbody').innerHTML =
+    '<div class="acard"><div class="ainfo"><b>'+escapeHtml(ie.name)+'</b><span>'+
+      (ie.info ? (inf.edited ? 'поправлено вручную' : 'найдено автоматически')+(inf.imdb ? ' · IMDb '+escapeHtml(inf.imdb) : '')+(inf.wiki ? ' · Википедия' : '') : 'описания нет')+'</span></div>'+
+      '<button class="btn" data-adinfofetch="1">🔎 Найти в интернете</button>'+
+      '<button class="btn" data-adinfofetch="as">🔎 Искать как…</button>'+
+      (ie.info ? '<button class="btn danger" data-adinfoclear="1">✖ Очистить</button>' : '')+
+      '<button class="btn" data-ad="back">← Назад</button></div>'+
+    field('title', 'Название', inf.title)+
+    field('year', 'Год', inf.year ? String(inf.year) : '')+
+    field('genres', 'Жанры', (inf.genres || []).join(', '))+
+    field('ratings', 'Рейтинги', (inf.ratings || []).map(r => r.source+': '+r.value).join('; '))+
+    field('description', 'Описание', inf.description ? (inf.description.length > 180 ? inf.description.slice(0, 180)+'…' : inf.description) : '')+
+    field('actors', 'Актёры', (inf.actors || []).join(', '))+
+    '<p class="tag">Сведения ищутся по названию папки или файла: IMDb, Wikidata, Википедия, TVmaze (для сериалов). Жанры и актёров пишите через запятую, рейтинги — «Источник: оценка» через точку с запятой.</p>';
+}
+
+async function editInfoField(key){
+  const ie = adminState.infoEdit;
+  const inf = Object.assign({}, ie.info || {});
+  const cur = {
+    title: inf.title || '', year: inf.year ? String(inf.year) : '', genres: (inf.genres || []).join(', '),
+    ratings: (inf.ratings || []).map(r => r.source+': '+r.value).join('; '), description: inf.description || '',
+    actors: (inf.actors || []).join(', '),
+  }[key];
+  const label = {title: 'Название', year: 'Год', genres: 'Жанры через запятую', ratings: 'Рейтинги: «Источник: оценка; …»',
+    description: 'Описание', actors: 'Актёры через запятую'}[key];
+  const val = await askText(label, cur, '');
+  if (val === null) return;
+  const list = v => v.split(',').map(x => x.trim()).filter(Boolean);
+  if (key === 'title') inf.title = val.trim();
+  if (key === 'year') inf.year = parseInt(val, 10) || 0;
+  if (key === 'genres') inf.genres = list(val);
+  if (key === 'actors') inf.actors = list(val);
+  if (key === 'description') inf.description = val.trim();
+  if (key === 'ratings') inf.ratings = val.split(';').map(x => x.trim()).filter(Boolean).map(x => {
+    const i = x.indexOf(':');
+    return i > 0 ? {source: x.slice(0, i).trim(), value: x.slice(i + 1).trim()} : {source: 'Оценка', value: x};
+  });
+  const r = await adminFetch('/api/admin/info', {method: 'POST', body: {id: ie.id, info: inf}});
+  if (r) { ie.info = r.info; adStatus('Сохранено', 'ok'); adminRender(); }
+}
+
+// --- дозагрузка в папку ---
+//
+// Файлы по одному (их можно выбрать сразу несколько) или архив целиком —
+// в уже существующий альбом музыки или в альбом «Фото и видео».
+
+async function uploadInto(id, name){
+  adminState.uploadInto = {id, name};
+  adminState.lastFocus = document.activeElement;
+  const choice = await modal('<p>Дозагрузить в «'+escapeHtml(name)+'»</p><div class="ssopt">'+
+    '<button class="btn primary" data-modal="ok" data-into="files">🎵 Файлы</button>'+
+    '<button class="btn" data-modal="ok" data-into="zip">📦 ZIP-архив</button></div>'+
+    '<div class="mbtns"><button class="btn" data-modal="cancel">Отмена</button></div>', '[data-into="files"]');
+  if (!choice || !adminState.intoMode) return;
+  const mode = adminState.intoMode;
+  adminState.intoMode = '';
+  if (mode === 'zip') { adminState.zipKind = 'into'; $('adzip').click(); }
+  else $('adfiles').click();
+}
+
+$('mbox').addEventListener('click', e => {
+  const b = e.target.closest('[data-into]');
+  if (b) adminState.intoMode = b.dataset.into;
+});
+
+$('adfiles').addEventListener('change', async () => {
+  const files = [...$('adfiles').files];
+  $('adfiles').value = '';
+  const into = adminState.uploadInto;
+  if (!files.length || !into) return;
+  let done = 0, failed = 0;
+  for (const f of files) {
+    const r = await uploadChunked(f, 'target=into&id='+encodeURIComponent(into.id),
+      p => adStatus('Загружаю «'+f.name+'» ('+(done + 1)+' из '+files.length+')… '+Math.round(p * 100)+'%'));
+    if (r) done++; else failed++;
+  }
+  adminState.dirty = true;
+  adStatus('В «'+into.name+'» добавлено: '+done+(failed ? ', не вышло: '+failed : ''), failed ? 'err' : 'ok');
+  if (build.target && build.target.id === into.id) await loadBuildSource(build.source && build.source.id);
+  adminRender();
+});
+
+// --- собрать альбом ---
+//
+// Порядок: выбрать или создать альбом (можно папку внутри него), открыть
+// любую другую папку, послушать трек и добавить его копией «＋» или перенести
+// «→». Источник можно менять сколько угодно — цель остаётся.
+
+const build = {target: null, source: null, items: [], pick: null, playing: ''};
+
+async function renderAdminBuild(){
+  if (build.pick) return renderBuildPicker();
+  $('adpath').textContent = 'собрать альбом';
+  const t = build.target, src = build.source;
+  const head =
+    '<div class="acard"><div class="ainfo"><b>📀 Куда: '+(t ? escapeHtml(t.name) : 'не выбрано')+'</b>'+
+      '<span class="apath">'+(t ? escapeHtml(t.path || '') : 'создайте альбом или выберите существующий')+'</span></div>'+
+      '<button class="btn" data-adbuild="new">🎵 Новый альбом</button>'+
+      '<button class="btn" data-adbuild="pick-target">📂 Выбрать</button>'+
+      (t ? '<button class="btn" data-adbuild="inner">＋ Папка внутри</button>'+
+           '<button class="btn" data-adinto="'+t.id+'">📥 Дозагрузить</button>' : '')+'</div>'+
+    '<div class="acard"><div class="ainfo"><b>🎵 Откуда: '+(src ? escapeHtml(src.name) : 'не выбрано')+'</b>'+
+      '<span class="apath">'+(src ? escapeHtml(src.path || '') : 'выберите папку с треками')+'</span></div>'+
+      '<button class="btn" data-adbuild="pick-source">📂 Выбрать</button>'+
+      (src && build.items.some(x => !x.is_dir) && t ?
+        '<button class="btn" data-adbuild="add-all">＋ Все</button><button class="btn" data-adbuild="move-all">→ Все</button>' : '')+'</div>';
+  if (!src) {
+    $('adbody').innerHTML = head + '<p class="tag">Треки можно копировать «＋» или переносить «→». Перенос в пределах одного диска мгновенный: файл не копируется, а меняет папку.</p>';
+    return;
+  }
+  const rows = build.items.map((it, i) => it.is_dir
+    ? '<div class="arow"><div class="ainfo"><b>📁 '+escapeHtml(it.name)+'</b></div>'+
+      '<button class="btn" data-adsrcdir="'+it.id+'" data-name="'+escapeHtml(it.name)+'">📂 Открыть</button></div>'
+    : '<div class="arow"><div class="ainfo"><b>'+escapeHtml(it.name.replace(/\.[^.]+$/, ''))+'</b></div>'+
+      '<span class="asize">'+fmtSize(it.size)+'</span>'+
+      '<button class="btn'+(build.playing === it.id ? ' on' : '')+'" data-adhear="'+i+'">'+(build.playing === it.id ? '⏸' : '▶')+'</button>'+
+      (t ? '<button class="btn" data-adcopy="'+it.id+'" title="Скопировать в альбом">＋</button>'+
+           '<button class="btn" data-admove="'+it.id+'" title="Перенести в альбом">→</button>' : '')+'</div>').join('');
+  $('adbody').innerHTML = head + (rows || '<div class="empty">В этой папке ничего нет</div>')+
+    (t ? '' : '<p class="tag">Выберите альбом «Куда», чтобы добавлять треки.</p>');
+}
+
+async function renderBuildPicker(){
+  const pk = build.pick, gen = adminState.gen;
+  const where = pk.for === 'target' ? 'куда складывать' : 'откуда брать треки';
+  $('adpath').textContent = where;
+  const here = pk.stack[pk.stack.length-1];
+  let head = '<div class="acard"><div class="ainfo"><b>Выберите папку — '+where+'</b>'+
+    '<span class="apath">'+escapeHtml(here ? here.path || here.name : 'библиотеки музыки')+'</span></div>'+
+    (here ? '<button class="btn primary" data-adpicked="'+here.id+'" data-name="'+escapeHtml(here.name)+'">✔ Взять эту</button>' : '')+
+    '<button class="btn" data-ad="back">← Назад</button></div>';
+  if (!here) {
+    if (!adminState.overview) adminState.overview = await adminFetch('/api/admin/overview');
+    if (stale(gen)) return;
+    const libs = (adminState.overview.libraries || []).filter(l => l.kind === 'music' && l.available);
+    const albums = (adminState.overview.sections.music || []);
+    $('adbody').innerHTML = head +
+      libs.map(l => '<div class="arow"><div class="ainfo"><b>🎵 '+escapeHtml(l.title)+' (вся библиотека)</b>'+
+        '<span class="apath">'+escapeHtml(l.path)+'</span></div>'+
+        '<button class="btn" data-adpickdir="'+l.id+'" data-name="'+escapeHtml(l.title)+'" data-path="'+escapeHtml(l.path)+'">📂 Открыть</button></div>').join('')+
+      '<h3>Альбомы</h3>'+albums.map(a => '<div class="arow"><div class="ainfo"><b>📀 '+escapeHtml(a.name)+'</b>'+
+        '<span class="apath">'+escapeHtml(a.path)+'</span></div>'+
+        '<button class="btn" data-adpickdir="'+a.id+'" data-name="'+escapeHtml(a.name)+'" data-path="'+escapeHtml(a.path)+'">📂 Открыть</button>'+
+        '<button class="btn primary" data-adpicked="'+a.id+'" data-name="'+escapeHtml(a.name)+'" data-path="'+escapeHtml(a.path)+'">✔ Взять эту</button></div>').join('');
+    return;
+  }
+  const r = await adminFetch('/api/admin/children?id='+encodeURIComponent(here.id));
+  if (!r || stale(gen)) return;
+  const dirs = r.items.filter(x => x.is_dir);
+  $('adbody').innerHTML = head + (dirs.length ? dirs.map(d =>
+    '<div class="arow"><div class="ainfo"><b>📁 '+escapeHtml(d.name)+'</b></div>'+
+    '<button class="btn" data-adpickdir="'+d.id+'" data-name="'+escapeHtml(d.name)+'">📂 Открыть</button>'+
+    '<button class="btn primary" data-adpicked="'+d.id+'" data-name="'+escapeHtml(d.name)+'">✔ Взять эту</button></div>').join('')
+    : '<div class="empty">Вложенных папок нет</div>');
+}
+
+async function loadBuildSource(id){
+  if (!id) { build.items = []; return; }
+  const r = await getJSON('/api/browse?id='+encodeURIComponent(id)).catch(() => ({items: []}));
+  build.items = r.items || [];
+}
+
+function hearTrack(i){
+  const it = build.items[i];
+  const el = $('prehear');
+  if (!it) return;
+  if (build.playing === it.id) { el.pause(); build.playing = ''; return adminRender(); }
+  el.src = it.url;
+  el.play().catch(() => {});
+  build.playing = it.id;
+  adminRender();
+}
+
+async function buildTransfer(ids, move){
+  if (!build.target || !ids.length) return;
+  const r = await adminFetch('/api/admin/transfer', {method: 'POST', body: {ids, to: build.target.id, move}});
+  if (!r) return;
+  adminState.dirty = true;
+  const what = move ? 'Перенесено' : 'Скопировано';
+  adStatus(what+': '+r.done+(r.skipped && r.skipped.length ? ' · пропущено: '+r.skipped.join('; ') : ''), r.done ? 'ok' : 'err');
+  if (move) { $('prehear').pause(); build.playing = ''; }
+  await loadBuildSource(build.source && build.source.id);
+  adminRender();
+}
+
+// --- заставка и титры ---
+//
+// Порядок: открыли сериал «✂» → выбрали сезон → одну серию. Серия играет прямо
+// в админке: доводите до нужного места (можно на паузе) и жмёте «Заставка
+// начинается» / «Заставка кончается», так же для титров. «Титры до конца серии»
+// — если после них ничего нет, а «Титры кончаются» — если после них есть сцена.
+//
+// Сохранить можно на весь сериал, на сезон или на одну серию: играет самая
+// точная запись. У сериала с одинаковой заставкой достаточно одного раза.
+
+const MK_VIDEO_EXT = /\.(mp4|m4v|mkv|avi|mov|ts|webm|mpg|mpeg|flv)$/i;
+
+function stopMarkVideo(){
+  const el = $('advid');
+  if (el.hidden) return;
+  el.pause();
+  el.removeAttribute('src');
+  el.load();
+  el.hidden = true;
+}
+
+async function openAdminMarks(id){
+  const it = adminState.items[id] || {};
+  pollScan();
+  adminState.marks = {id, name: it.name || '', isDir: !!it.is_dir, season: null, file: null,
+    url: '', urls: {}, data: null, scope: 'series'};
+  // фильм одним файлом — отмечать нечего выбирать, сразу редактор
+  if (!it.is_dir) return openMarkFile(id, it.name || '');
+  return adminRender();
+}
+
+async function renderAdminMarks(){
+  const mk = adminState.marks, gen = adminState.gen;
+  $('adpath').textContent = 'заставка и титры · '+mk.name;
+  if (mk.file) return renderMarkEditor();
+  stopMarkVideo();
+  $('adbody').innerHTML = '<div class="empty">Загрузка…</div>';
+  const here = mk.season || {id: mk.id, name: mk.name};
+  const r = await getJSON('/api/browse?id='+encodeURIComponent(here.id)).catch(() => null);
+  if (!r || stale(gen)) return;
+  const items = r.items || [];
+  const dirs = items.filter(x => x.is_dir);
+  const files = items.filter(x => !x.is_dir && MK_VIDEO_EXT.test(x.name));
+  files.forEach(f => { mk.urls[f.id] = f.url; });
+  $('adbody').innerHTML =
+    '<div class="acard"><div class="ainfo"><b>'+escapeHtml(here.name)+'</b><span>'+
+      (dirs.length && !files.length ? 'выберите сезон' : 'выберите серию — она будет играть здесь')+'</span></div>'+
+      '<button class="btn" data-ad="back">← Назад</button></div>'+
+    scanCard(here)+
+    dirs.map(d => '<div class="arow"><div class="ainfo"><b>📁 '+escapeHtml(d.name)+'</b></div>'+
+      '<button class="btn" data-admkdir="'+d.id+'" data-name="'+escapeHtml(d.name)+'">📂 Открыть</button></div>').join('')+
+    files.map(f => '<div class="arow"><div class="ainfo"><b>🎬 '+escapeHtml(f.name)+'</b></div>'+
+      '<button class="btn primary" data-admkfile="'+f.id+'" data-name="'+escapeHtml(f.name)+'">✂ Отмечать</button></div>').join('')+
+    (dirs.length || files.length ? '' : '<div class="empty">Тут нет ни сезонов, ни серий</div>');
+}
+
+// Открыть серию: ссылка на файл и записи всех трёх уровней.
+async function openMarkFile(id, name){
+  const mk = adminState.marks;
+  // серию слушаем здесь — видео и музыка приставки одновременно не звучат
+  if (!v.paused) v.pause();
+  if (!a.paused) a.pause();
+  mk.file = {id, name};
+  mk.url = mk.urls[id] || '';
+  if (!mk.url) {
+    const r = await getJSON('/api/item?id='+encodeURIComponent(id)).catch(() => null);
+    mk.url = (r && r.item && r.item.url) || '';
+  }
+  mk.data = await getJSON('/api/marks?file='+encodeURIComponent(id)).catch(() => null);
+  if (mk.data && mk.data.season_id) mk.scope = 'season';
+  return adminRender();
+}
+
+function markScopeName(scope){
+  const d = (adminState.marks && adminState.marks.data) || {};
+  if (scope === 'season') return 'сезона «'+(d.season_name || '')+'»';
+  if (scope === 'episode') return 'этой серии';
+  return d.kind === 'film' ? 'этого фильма' : 'всего сериала';
+}
+
+function markLine(m){
+  if (!m || (!m.intro_end && !m.credits_from_end && !m.auto_skip)) return 'ничего не отмечено';
+  const out = [];
+  if (m.intro_end) out.push('заставка '+fmt(m.intro_start)+' – '+fmt(m.intro_end));
+  if (m.credits_from_end) out.push('титры за '+fmt(m.credits_from_end)+' до конца'+
+    (m.credits_end_from_end ? ', кончаются за '+fmt(m.credits_end_from_end) : ' и до самого конца'));
+  if (m.auto_skip) out.push('заставка пропускается сама');
+  return out.join(' · ');
+}
+
+function renderMarkEditor(){
+  const mk = adminState.marks, d = mk.data || {}, m = d.marks || {};
+  const vid = $('advid');
+  if (mk.url && vid.getAttribute('src') !== mk.url) { vid.src = mk.url; vid.hidden = false; }
+  // у фильма одним файлом «фильм» и «этот файл» — одна и та же запись
+  const oneFile = d.kind === 'film' && d.episode_id === d.key;
+  const scopes = [['series', d.kind === 'film' ? 'Этот фильм' : 'Весь сериал']]
+    .concat(d.season_id ? [['season', 'Сезон «'+(d.season_name || '')+'»']] : [])
+    .concat(oneFile ? [] : [['episode', d.kind === 'film' ? 'Только этот файл' : 'Только эта серия']]);
+  if (oneFile && mk.scope === 'episode') mk.scope = 'series';
+  const level = (title, rec) => '<div class="arow"><div class="ainfo"><b>'+title+'</b>'+
+    '<span class="apath">'+escapeHtml(markLine(rec))+'</span></div></div>';
+  $('adbody').innerHTML =
+    '<div class="acard"><div class="ainfo"><b>🎬 '+escapeHtml(mk.file.name)+'</b>'+
+      '<span>сейчас действует: '+escapeHtml(markLine(m))+'</span></div>'+
+      '<button class="btn" data-ad="back">← Назад</button></div>'+
+    '<div class="mkrow"><button class="btn primary" data-admk="play" title="Пуск или пауза">⏯</button>'+
+      '<button class="btn" data-admk="-60">−60 с</button><button class="btn" data-admk="-10">−10 с</button>'+
+      '<button class="btn" data-admk="-1">−1 с</button><button class="btn" data-admk="1">+1 с</button>'+
+      '<button class="btn" data-admk="10">+10 с</button><button class="btn" data-admk="60">+60 с</button>'+
+      '<span class="mkpos" id="mkpos">0:00</span></div>'+
+    '<div class="mkrow"><span class="lbl">Это место —</span>'+
+      '<button class="btn" data-admk="intro-start">⏵ Заставка начинается</button>'+
+      '<button class="btn" data-admk="intro-end">⏹ Заставка кончается</button>'+
+      '<button class="btn" data-admk="credits-start">🎬 Титры начинаются</button>'+
+      '<button class="btn" data-admk="credits-end">⏹ Титры кончаются (дальше сцена)</button>'+
+      '<button class="btn" data-admk="credits-to-end">🏁 Титры до конца'+(d.kind === 'film' ? '' : ' серии')+'</button>'+
+      '<button class="btn" data-admk="fromfile" title="В mkv часто есть главы «Intro» и «Credits» — возьмём тайминги оттуда">🔎 Взять из глав файла</button></div>'+
+    '<div class="mkrow"><span class="lbl">Записать для</span>'+
+      scopes.map(([v, label]) => '<button class="btn'+(mk.scope === v ? ' on' : '')+'" data-admkscope="'+v+'">'+escapeHtml(label)+'</button>').join('')+
+      '<button class="btn'+(m.auto_skip ? ' on' : '')+'" data-admk="auto">'+(m.auto_skip ? '☑' : '☐')+' Пропускать заставку сам</button>'+
+      '<button class="btn danger" data-admk="reset">↺ Сбросить у '+escapeHtml(markScopeName(mk.scope))+'</button></div>'+
+    level(d.kind === 'film' ? 'Фильм целиком' : 'Весь сериал', d.series)+
+    (d.season_id ? level('Сезон «'+escapeHtml(d.season_name || '')+'»', d.season) : '')+
+    (oneFile ? '' : level(d.kind === 'film' ? 'Этот файл' : 'Эта серия', d.episode))+
+    '<p class="tag">Играет самая точная запись: серия важнее сезона, сезон важнее сериала. Титры считаются от конца файла — серии разной длины, а титры одни и те же.</p>';
+  updateMarkPos();
+}
+
+function updateMarkPos(){
+  const el = $('mkpos');
+  if (!el) return;
+  const vid = $('advid');
+  el.textContent = fmt(vid.currentTime || 0) + (isFinite(vid.duration) && vid.duration ? ' / '+fmt(vid.duration) : '');
+}
+$('advid').addEventListener('timeupdate', updateMarkPos);
+$('advid').addEventListener('loadedmetadata', updateMarkPos);
+
+async function saveMark(what){
+  const mk = adminState.marks, vid = $('advid');
+  if (!mk || !mk.file) return;
+  const t = vid.currentTime || 0, dur = vid.duration || 0;
+  const cur = (mk.data && mk.data.marks) || {};
+  const body = {file: mk.file.id, scope: mk.scope};
+  const needDur = 'Серия ещё не загрузилась — подождите пару секунд';
+  // тайминги, записанные в самом файле: главы «Intro», «Ending Credits»
+  if (what === 'fromfile') {
+    const c = await getJSON('/api/marks/chapters?file='+encodeURIComponent(mk.file.id)).catch(() => null);
+    if (!c || !c.found || (!c.found.intro_end && !c.found.credits_from_end)) {
+      return adStatus('В главах этого файла нет ни заставки, ни титров — отметьте руками', 'err');
+    }
+    if (c.found.intro_end) { body.intro_start = c.found.intro_start; body.intro_end = c.found.intro_end; }
+    if (c.found.credits_from_end) {
+      body.credits_from_end = c.found.credits_from_end;
+      body.credits_end_from_end = c.found.credits_end_from_end;
+    }
+  }
+  switch (what) {
+    case 'intro-start': body.intro_start = t; break;
+    case 'intro-end': body.intro_end = t; break;
+    case 'credits-start':
+      if (!dur) return adStatus(needDur, 'err');
+      body.credits_from_end = Math.max(1, dur - t);
+      body.credits_end_from_end = 0;
+      break;
+    case 'credits-end':
+      if (!dur) return adStatus(needDur, 'err');
+      body.credits_end_from_end = Math.max(0, dur - t);
+      break;
+    case 'credits-to-end': body.credits_end_from_end = 0; break;
+    case 'auto': body.auto_skip = !cur.auto_skip; break;
+    case 'reset': body.reset = true; break;
+  }
+  const r = await fetch(BASE+'/api/marks', {method: 'PUT', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)}).then(r => r.json()).catch(() => null);
+  if (!r || !r.marks) return adStatus('Не удалось сохранить отметку', 'err');
+  mk.data = r;
+  const told = {
+    'intro-start': 'Заставка начинается с '+fmt(t),
+    'intro-end': 'Заставка кончается на '+fmt(t),
+    'credits-start': 'Титры начинаются за '+fmt(dur - t)+' до конца',
+    'credits-end': 'Титры кончаются за '+fmt(dur - t)+' до конца',
+    'credits-to-end': 'Титры идут до самого конца',
+    'fromfile': 'Взято из глав файла',
+    'auto': cur.auto_skip ? 'Заставку будем предлагать пропустить' : 'Заставка будет пропускаться сама',
+    'reset': 'Сброшено у '+markScopeName(mk.scope),
+  };
+  adStatus(what === 'reset' ? told.reset : (told[what] || 'Сохранено')+' · для '+markScopeName(mk.scope), 'ok');
+  // отметки читает и сам плеер: если играет эта же серия, подхватим сразу
+  if (marksFor === mk.file.id) curMarks = r;
+  const key = what;
+  await adminRender();
+  const again = $('adbody').querySelector('[data-admk="'+key+'"]');
+  if (again) again.focus();
+}
+
+// --- заставка по звуку ---
+//
+// Заставка у серий одного сезона звучит одинаково — агент сравнивает звук и
+// находит её сам (см. fingerprint.go). Здесь только кнопка, опрос хода работы
+// и разбор ответа: отметки агент записывает сам, на уровне каждой серии.
+
+let scanTimer = null;
+
+function scanCard(here){
+  const st = adminState.scan;
+  const from = adminState.scanFromStart !== false;
+  let body = '<div class="acard"><div class="ainfo"><b>🎧 Найти заставку и титры по звуку</b>'+
+    '<span>агент послушает начало и конец каждой серии и отметит общий кусок — заставку и титры. '+
+    'Минута-две на сезон, отметки лягут на каждую серию отдельно.</span></div>'+
+    '<button class="btn'+(from ? ' on' : '')+'" data-adscanfrom="1">'+(from ? '☑' : '☐')+' Пропускать с самого начала</button>'+
+    '<button class="btn primary" data-adscan="'+here.id+'">🎧 Найти</button></div>';
+  if (st && (st.running || (st.episodes && st.episodes.length) || st.error)) {
+    const pct = st.total ? Math.round(100 * st.done / st.total) : 0;
+    body += '<div class="acard"><div class="ainfo"><b>'+escapeHtml(st.title || '')+' · '+
+      (st.running ? escapeHtml(st.stage || '') : (st.error ? 'остановлено' : 'готово'))+'</b>'+
+      '<span>'+st.done+' из '+st.total+(st.seconds ? ' · '+st.seconds+' с' : '')+
+      (st.error ? ' · '+escapeHtml(st.error) : '')+'</span>'+
+      '<div class="abar"><i style="width:'+pct+'%"></i></div></div>'+
+      (st.running ? '<button class="btn danger" data-adscanstop="1">✖ Остановить</button>' : '')+'</div>'+
+      (st.episodes || []).map(e => '<div class="arow"><div class="ainfo"><b>'+escapeHtml(e.name)+'</b>'+
+        '<span class="apath">'+(e.intro_end ? 'заставка '+fmt(e.intro_start)+' – '+fmt(e.intro_end) : 'заставка не нашлась')+
+        (e.credits_from_end ? ' · титры за '+fmt(e.credits_from_end)+' до конца' : '')+
+        (e.note ? ' · '+escapeHtml(e.note) : '')+'</span></div></div>').join('');
+  }
+  return body;
+}
+
+async function pollScan(){
+  clearTimeout(scanTimer);
+  const st = await adminFetch('/api/admin/marks/scan');
+  if (!st) return;
+  adminState.scan = st;
+  if (adminState.marks && !adminState.marks.file) await adminRender();
+  if (st.running) scanTimer = setTimeout(pollScan, 2000);
+  else adminState.dirty = true;
+}
+
+// --- статистика ---
+
+async function renderAdminStats(){
+  $('adpath').textContent = 'статистика';
+  const gen = adminState.gen;
+  const days = adminState.statsDays || 7;
+  const r = await getJSON('/api/stats?days='+days).catch(() => null);
+  if (!r || stale(gen)) return;
+  const hours = sec => sec >= 3600 ? (sec / 3600).toFixed(1).replace('.0', '')+' ч' : Math.round(sec / 60)+' мин';
+  const max = Math.max(1, ...r.days.map(d => d.seconds));
+  const wd = ['вс','пн','вт','ср','чт','пт','сб'];
+  const bars = r.days.map(d => {
+    const dt = new Date(d.date+'T12:00:00');
+    const label = days <= 7 ? wd[dt.getDay()] : String(dt.getDate());
+    return '<div class="sbar" title="'+d.date+'"><em>'+(d.seconds >= 60 ? hours(d.seconds) : '')+'</em>'+
+      '<i style="height:'+(d.seconds / max * 100).toFixed(1)+'%"></i><span>'+label+'</span></div>';
+  }).join('');
+  $('adbody').innerHTML =
+    '<div class="acard"><div class="ainfo"><b>Посмотрено за '+(days === 7 ? 'неделю' : days+' дней')+': '+hours(r.total)+'</b>'+
+      '<span>считается только воспроизведение: перемотка и паузы не в счёт; музыка — нет</span></div>'+
+      [7, 30].map(n => '<button class="btn'+(n === days ? ' on' : '')+'" data-adstats="'+n+'">'+n+' дней</button>').join('')+'</div>'+
+    '<div class="sbars">'+bars+'</div>'+
+    '<h3>Чаще всего</h3>'+(r.top.length ? r.top.map((t, i) =>
+      '<div class="arow"><div class="ainfo"><b>'+(i + 1)+'. '+(t.kind === 'series' ? '📺 ' : '🎬 ')+escapeHtml(t.title)+'</b></div>'+
+      '<span class="asize">'+hours(t.seconds)+'</span></div>').join('') : '<div class="empty">Пока ничего не смотрели</div>');
+}
+
+$('adfile').addEventListener('change', () => {
+  const f = $('adfile').files[0];
+  $('adfile').value = '';
+  if (f) applyImage(f);
+});
+
+$('admin').addEventListener('click', async e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  const d = b.dataset;
+  if (d.ad === 'back') return adminBack();
+  if (d.ad === 'up') return adminBack();
+  if (d.pin) return pinKey(d.pin);
+  if (d.adtab) { adminState.tab = d.adtab; adminState.dir = null; adminState.picker = null; adminState.infoEdit = null;
+    if (adminState.marks) { stopMarkVideo(); adminState.marks = null; }
+    adStatus(''); return adminRender(); }
+  const item = id => adminState.items[id] || {id, name: '', path: ''};
+  if (d.adopen) {
+    adminState.dir = {id: d.adopen, parent: adminState.dir};
+    return adminRender();
+  }
+  if (d.adcover) return openPicker('cover', d.adcover);
+  if (d.adinfo) { const it = adminState.items[d.adinfo] || {}; adminState.infoEdit = {id: d.adinfo, name: it.name || '', info: undefined}; return adminRender(); }
+  if (d.adinfoedit) return editInfoField(d.adinfoedit);
+  if (d.adinfofetch) {
+    const ie = adminState.infoEdit;
+    const body = {id: ie.id, fetch: true};
+    if (d.adinfofetch === 'as') {
+      const t = await askText('Искать под названием (можно с годом: «Legion 2017»)', (ie.info && ie.info.title) || ie.name, '');
+      if (!t || !t.trim()) return;
+      const m = /^(.*?)[\s(]*((?:19|20)\d{2})\)?\s*$/.exec(t.trim());
+      body.title = m ? m[1].trim() : t.trim();
+      if (m) body.year = +m[2];
+    }
+    adStatus('Ищу в IMDb, Wikidata, Википедии…');
+    const r = await adminFetch('/api/admin/info', {method: 'POST', body});
+    if (r) { ie.info = r.info; adStatus('Найдено и сохранено', 'ok'); adminRender(); }
+    return;
+  }
+  if (d.adinfoclear) {
+    if (!await askConfirm('Удалить описание? В следующий раз его поищут заново.', 'Очистить', true)) return;
+    const r = await adminFetch('/api/admin/info', {method: 'POST', body: {id: adminState.infoEdit.id, clear: true}});
+    if (r) { adminState.infoEdit.info = null; adStatus('Описание удалено', 'ok'); adminRender(); }
+    return;
+  }
+  if (d.adstats) { adminState.statsDays = +d.adstats; return adminRender(); }
+  if (d.admarks) return openAdminMarks(d.admarks);
+  if (d.adscanfrom) { adminState.scanFromStart = adminState.scanFromStart === false; return adminRender(); }
+  if (d.adscan) {
+    const r = await adminFetch('/api/admin/marks/scan', {method: 'POST',
+      body: {id: d.adscan, from_start: adminState.scanFromStart !== false}});
+    if (!r) return;
+    adminState.scan = r;
+    adStatus('Слушаем серии — это займёт пару минут', 'ok');
+    await adminRender();
+    return pollScan();
+  }
+  if (d.adscanstop) {
+    await adminFetch('/api/admin/marks/scan/stop', {method: 'POST'});
+    return pollScan();
+  }
+  if (d.admkdir) { adminState.marks.season = {id: d.admkdir, name: d.name}; return adminRender(); }
+  if (d.admkfile) return openMarkFile(d.admkfile, d.name);
+  if (d.admkscope) { adminState.marks.scope = d.admkscope; return adminRender(); }
+  if (d.admk) {
+    const vid = $('advid');
+    if (d.admk === 'play') { if (vid.paused) vid.play().catch(() => {}); else vid.pause(); return; }
+    const step = parseFloat(d.admk);
+    if (!isNaN(step)) {
+      vid.currentTime = Math.max(0, Math.min((vid.duration || 1e9) - 0.5, (vid.currentTime || 0) + step));
+      return updateMarkPos();
+    }
+    return saveMark(d.admk);
+  }
+  if (d.adinto) { const it = adminState.items[d.adinto] || build.target || {}; return uploadInto(d.adinto, it.name || 'папку'); }
+  if (d.adbuild) {
+    if (d.adbuild === 'new' || d.adbuild === 'inner') {
+      const inner = d.adbuild === 'inner';
+      const name = await askText(inner ? 'Название папки внутри «'+build.target.name+'»' : 'Название нового альбома', '', '');
+      if (!name || !name.trim()) return;
+      const body = inner ? {name, id: build.target.id} : {name, kind: 'music'};
+      const r = await adminFetch('/api/admin/mkdir', {method: 'POST', body});
+      if (r) { build.target = r; adminState.dirty = true; adStatus('Создано: '+r.name, 'ok'); adminRender(); }
+      return;
+    }
+    if (d.adbuild === 'pick-target' || d.adbuild === 'pick-source') {
+      build.pick = {for: d.adbuild === 'pick-target' ? 'target' : 'source', stack: []};
+      return adminRender();
+    }
+    const ids = build.items.filter(x => !x.is_dir).map(x => x.id);
+    return buildTransfer(ids, d.adbuild === 'move-all');
+  }
+  if (d.adpickdir || d.adpicked) {
+    const id = d.adpickdir || d.adpicked;
+    const item = {id, name: d.name, path: d.path || (adminState.items[id] || {}).path || ''};
+    if (d.adpickdir) { build.pick.stack.push(item); return adminRender(); }
+    if (build.pick.for === 'target') build.target = item;
+    else { build.source = item; await loadBuildSource(id); }
+    build.pick = null;
+    return adminRender();
+  }
+  if (d.adsrcdir) {
+    build.source = {id: d.adsrcdir, name: d.name, path: ''};
+    await loadBuildSource(d.adsrcdir);
+    return adminRender();
+  }
+  if (d.adhear) return hearTrack(+d.adhear);
+  if (d.adcopy) return buildTransfer([d.adcopy], false);
+  if (d.admove) return buildTransfer([d.admove], true);
+  if (d.adzip) { adminState.zipKind = d.adzip; return $('adzip').click(); }
+  if (d.adpick) return openPicker(d.adpick, null);
+  if (d.adalbum) { adminState.picker.albums.push({id: d.adalbum, name: d.name}); return adminRender(); }
+  if (d.adphoto) return applyImage({photo_id: d.adphoto});
+  if (d.adupload) return $('adfile').click();
+  if (d.adunset) {
+    const pk = adminState.picker;
+    const q = d.adunset === 'background' ? '?target=background' : '?target=cover&id='+encodeURIComponent(pk.id);
+    const r = await adminFetch('/api/admin/image'+q, {method: 'DELETE'});
+    if (r) {
+      adminState.dirty = true;
+      adStatus(d.adunset === 'background' ? 'Фон убран' : 'Обложка убрана', 'ok');
+      if (d.adunset === 'background') loadLooks(); else adminState.picker = null;
+      adminRender();
+    }
+    return;
+  }
+  if (d.adlook) {
+    const [key, val] = d.adlook.split(':');
+    const body = {}; body[key] = key === 'arrows' ? val : +val;
+    const r = await adminFetch('/api/admin/settings', {method: 'POST', body});
+    if (r) { loadLooks(); adminRender(); }
+    return;
+  }
+  if (d.adrename) {
+    const it = item(d.adrename);
+    const isFile = !it.is_dir;
+    // в окне — настоящее имя на диске, а не очищенное название плитки
+    const disk = it.path ? it.path.split('/').pop() : it.name;
+    const current = it.is_dir ? disk : disk.replace(/\.[^.]+$/, '');
+    const name = await askText('Новое имя для «'+it.name+'»', current,
+      isFile ? 'Расширение файла сохранится само.' : 'Имя папки — это и название на ТВ, и запрос для поиска постера («Название (год)»).');
+    if (name === null || name.trim() === '' || name.trim() === current) return;
+    const r = await adminFetch('/api/admin/rename', {method:'POST', body:{id: it.id, name}});
+    if (r) { adminState.dirty = true; adStatus('Переименовано: '+r.name, 'ok'); adminRender(); }
+    return;
+  }
+  if (d.addelete) {
+    const it = item(d.addelete);
+    const days = adminState.overview ? adminState.overview.trash_days : 3;
+    const ok = await askConfirm('Удалить «'+it.name+'»?\n'+(it.path||'')+'\n\nУйдёт в корзину и сотрётся с диска через '+days+' '+
+      plural(days,'день','дня','дней')+'. До этого можно вернуть.', '🗑 Удалить', true);
+    if (!ok) return;
+    const r = await adminFetch('/api/admin/delete', {method:'POST', body:{id: it.id}});
+    if (r) { adminState.dirty = true; adStatus('В корзине: '+r.entry.title+' — сотрётся '+fmtDate(r.entry.purge_at), 'ok'); adminRender(); }
+    return;
+  }
+  if (d.adposter) {
+    const it = item(d.adposter);
+    const ok = await askConfirm('Найти постер для «'+it.name+'» заново?\nКартинка рядом с ним будет удалена (и подложенная руками тоже), новая найдётся при следующем показе плитки.', 'Искать заново');
+    if (!ok) return;
+    const r = await adminFetch('/api/admin/poster/reset', {method:'POST', body:{id: it.id}});
+    if (r) { adminState.dirty = true; adStatus('Постер будет найден заново', 'ok'); }
+    return;
+  }
+  if (d.adrestore) {
+    const r = await adminFetch('/api/admin/trash/'+d.adrestore+'/restore', {method:'POST'});
+    if (r) { adminState.dirty = true; adStatus('Вернулось на место: '+r.entry.title, 'ok'); adminRender(); }
+    return;
+  }
+  if (d.adpurge) {
+    const ok = await askConfirm('Стереть с диска сразу? Вернуть будет нельзя.', '✖ Стереть', true);
+    if (!ok) return;
+    const r = await adminFetch('/api/admin/trash/'+d.adpurge+'/purge', {method:'POST'});
+    if (r) { adStatus('Стёрто: '+r.entry.title+', освободилось '+fmtSize(r.entry.size), 'ok'); adminRender(); }
+    return;
+  }
+  if (d.adsvc) {
+    if (d.adsvc === 'forget-pin') {
+      adminState.pin = ''; store.set('htv.adminPin', '');
+      return showPin('PIN забыт на этом устройстве');
+    }
+    if (d.adsvc === 'progress-clear' &&
+        !await askConfirm('Очистить «Продолжить просмотр» целиком?', 'Очистить', true)) return;
+    const r = await adminFetch('/api/admin/service/'+d.adsvc, {method:'POST'});
+    if (r) {
+      if (d.adsvc === 'progress-clear') adminState.dirty = true;
+      adStatus({'photos-clear':'Копии фото удалены', 'posters-retry':'Постеры поищутся снова при показе плиток',
+        'progress-clear':'«Продолжить просмотр» очищен', 'notify-test':'Отправлено — проверьте Telegram'}[d.adsvc] || 'Готово', 'ok');
+      if (d.adsvc !== 'notify-test') adminRender();
+    }
+  }
+});
+
+// --- приложение для Android TV ---
+//
+// Встроенный браузер приставки водит курсором, приложение (habits/tv-app)
+// передаёт странице настоящие стрелки. Оно представляется «HabitsTV/» в
+// User-Agent: тогда «Начать» не нужно (автовоспроизведение там разрешено), а
+// кнопка «Назад» на пульте спрашивает у страницы, есть ли куда возвращаться.
+const IN_APP = /HabitsTV\//.test(navigator.userAgent);
+
+window.habitsBack = function(){
+  if ($('gate').style.display !== 'none') return false;
+  if (!$('qlist').hidden) { toggleQueue(false); return true; }
+  if (closeCast()) return true;
+  if (!$('amodal').hidden) { modalAnswer(false); return true; }
+  if (!$('admin').hidden) { adminBack(); return true; }
+  if (skipKind) { cancelSkip(); return true; }
+  if (photoFull) { closePhotoFull(); return true; }
+  if ($('app').classList.contains('theater')) { actions.full(); return true; }
+  if (mode === 'files') { if (stack.length) { goUp(); return true; } return false; }
+  if ($('app').classList.contains('player')) { leavePlayer(); return true; }
+  if (vstack.length) { vstack.pop(); renderVisual(); return true; }
+  return false;   // главная: приложение закроется
+};
+
+if (IN_APP) {
+  $('appSettings').hidden = false;
+  $('appSettings').onclick = () => { try { HabitsApp.openSettings(); } catch(e){} };
+  $('start').click();
+} else {
+  const apkURL = BASE + '/app/habits-tv.apk';
+  fetch(apkURL, {method: 'HEAD'}).then(r => {
+    if (!r.ok) return;
+    $('apk').href = apkURL;
+    $('apk').hidden = false;
+  }).catch(() => {});
+}
+</script>
+</body>
+</html>

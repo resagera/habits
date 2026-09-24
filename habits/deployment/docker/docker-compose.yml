@@ -1,0 +1,21 @@
+version: '3.1'
+
+services:
+  postgres:
+    image: postgres:16.10
+    container_name: pg_webapp_bot
+    restart: on-failure
+    environment:
+      POSTGRES_DB: "webapp_bot"
+      POSTGRES_USER: "webapp_bot"
+      POSTGRES_PASSWORD: "webapp_bot_pgpwd4habr"
+    volumes:
+      - /opt/webapps/striks-api/data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - bot-networks
+
+networks:
+  bot-networks:
+    driver: bridge
