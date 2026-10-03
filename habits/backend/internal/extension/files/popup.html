@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>Habits</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 400px;
+        height: 600px;
+        overflow: hidden;
+        background: #121212;
+      }
+      iframe {
+        display: block;
+        border: 0;
+        width: 400px;
+        height: 600px;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      Интерфейс грузится с сервера — расширение не нужно перевыпускать при
+      каждом релизе приложения. Адрес приложения подставлен при сборке архива.
+      Вход по токену доступа (Настройки мини-приложения → «Токены доступа»);
+      токен хранится в localStorage этого окна и не покидает браузер.
+    -->
+    <iframe src="{{APP_URL}}"></iframe>
+  </body>
+</html>
