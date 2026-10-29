@@ -1,0 +1,526 @@
+#!/usr/bin/env python3
+"""
+Сторож папки «положил и забыл»: что бросили в convert_and_del — уезжает на
+приставку.
+
+Запускается по таймеру раз в десять минут, сам ничего не ждёт и ничего не
+спрашивает. За один прогон:
+
+  1. смотрит в каждой папке-стороже (их может быть несколько, список WATCHES)
+     подпапки films, serials и anime;
+  2. берёт только то, что УСТОЯЛОСЬ — размер и время правки не менялись с
+     прошлого прогона: иначе подхватил бы наполовину скачанный торрент;
+  3. проверяет, что на приставке есть место под эту библиотеку;
+  4. зовёт send-series.py — тот сам решает, что копировать, а что
+     перекодировать, и отдаёт файлы по сети;
+  5. убеждается, что файлы ЛЕГЛИ на той стороне (имя и ненулевой размер), и
+     только тогда убирает исходник — папка называется convert_and_del.
+
+Два прогона разом не идут: lock-файл. Если прошлый ещё конвертирует, этот
+пишет строчку в журнал и выходит — файлы уже забраны, трогать их нельзя.
+systemd и сам не запустит второй экземпляр oneshot-юнита, но сторожа
+запускают и руками.
+
+Разложение папки — то же, что у send-series.py:
+  films/Фильм.mkv        → фильм отдельной плиткой
+  films/Коллекция/       → набор фильмов (--films), плитка на файл
+  films/Фильм (2020)/    → ровно одно видео внутри: одна плитка по имени папки
+  serials/Сериал/        → сериал, структура сезонов сохраняется
+  anime/Сериал/          → то же, но в библиотеку аниме (отдельный раздел)
+
+    ./convert-watch.py --dry-run     # что взял бы и что сделал бы
+    ./convert-watch.py               # один прогон (так его зовёт таймер)
+    ./convert-watch.py --settle 0    # не ждать устаканивания (ручной запуск)
+    ./convert-watch.py --watch /путь/convert_and_del    # только эта папка
+
+Рабочий каталог для временных MP4 сторож выбирает сам — первый из WORKDIRS
+в send-series.py, куда можно писать и где хватает места под самый большой файл
+с запасом. Прибивать его к одной папке нельзя: диск, на котором лежит сама
+папка-сторож, обычно и забит первым, и тогда сторож молча пропускает всё
+подряд каждые десять минут.
+"""
+import argparse
+import fcntl
+import json
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import time
+import importlib.util
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+# Папок-сторожей может быть несколько: домашние диски забиты под ноль, и то,
+# что не влезло на один, кладут на другой. У каждой свои films/serials/anime.
+WATCHES = (
+    '/home/resager/rudb/mount/2tb-ext-part/rudb/temp/convert_and_del',
+    '/media/resager/a25e7fed-287a-455d-a4af-40dd1fc70868/home/sah/rudb/convert_and_del',
+)
+STATE_DIR = os.path.expanduser('~/.local/state/habits-convert')
+# запас на приставке сверх размера исходника: перекодирование обычно ужимает,
+# но забивать диск под ноль нельзя — там же кэш агента и перекодированные копии
+RESERVE = 5 << 30
+KEEP_LOGS = 200
+MAX_FAILS = 3
+
+
+def load(name, file):
+    spec = importlib.util.spec_from_file_location(name, os.path.join(HERE, file))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class Log:
+    """В файл и в stdout разом: файл — чтобы читать потом, stdout — чтобы
+    строки попадали в journalctl вместе с остальным юнитом."""
+
+    def __init__(self, path):
+        self.f = open(path, 'a', encoding='utf-8', buffering=1) if path else None
+
+    def __call__(self, msg):
+        line = time.strftime('%Y-%m-%d %H:%M:%S ') + msg
+        print(line, flush=True)
+        if self.f:
+            self.f.write(line + '\n')
+
+    def close(self):
+        if self.f:
+            self.f.close()
+
+
+def open_log(log_dir):
+    if not log_dir:
+        return Log(''), ''
+    os.makedirs(log_dir, exist_ok=True)
+    path = os.path.join(log_dir, time.strftime('convert-%Y%m%d-%H%M%S.log'))
+    # старые прогоны не копим: их сотни, а интересны последние
+    old = sorted(f for f in os.listdir(log_dir) if f.startswith('convert-') and f.endswith('.log'))
+    for f in old[:-KEEP_LOGS]:
+        try:
+            os.remove(os.path.join(log_dir, f))
+        except OSError:
+            pass
+    return Log(path), path
+
+
+def read_state(path):
+    try:
+        with open(path, encoding='utf-8') as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def write_state(path, state):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(state, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, path)
+
+
+def videos_under(path, ss):
+    if os.path.isfile(path):
+        return [path] if path.lower().endswith(ss.VIDEO_EXT) else []
+    return ss.collect(path, '')
+
+
+def local_free(path):
+    st = os.statvfs(path)
+    return st.f_bavail * st.f_frsize
+
+
+def watch_tag(watch):
+    """Короткое имя папки-сторожа для журнала: точка монтирования, на которой
+    она лежит. Полный путь в каждой строке не читается."""
+    p = os.path.abspath(watch)
+    while p != '/' and not os.path.ismount(p):
+        p = os.path.dirname(p)
+    name = os.path.basename(p) or p
+    return '[' + (name[:12] + '…' if len(name) > 13 else name) + ']'
+
+
+def pick_workdir(need, ss):
+    """Где собирать временный MP4: первая папка из списка send-series.py, куда
+    можно писать и где хватает места. Не нашлось такой — самая свободная из
+    доступных, чтобы в журнале было видно, сколько всё-таки есть и где."""
+    best = ('', -1)
+    for path in ss.WORKDIRS:
+        if not (os.path.isdir(path) and os.access(path, os.W_OK)):
+            continue
+        free = local_free(path)
+        if free >= need:
+            return path, free
+        if free > best[1]:
+            best = (path, free)
+    return best
+
+
+def fingerprint(files):
+    """Отпечаток набора файлов: сколько, сколько весят, когда правили в
+    последний раз. Качается торрент — отпечаток меняется каждую минуту."""
+    total = 0
+    newest = 0.0
+    for f in files:
+        try:
+            st = os.stat(f)
+        except OSError:
+            continue
+        total += st.st_size
+        newest = max(newest, st.st_mtime)
+    return {'count': len(files), 'size': total, 'mtime': int(newest)}
+
+
+def scan(watches, ss, log):
+    """Что лежит в папках: по элементу на плитку будущей медиатеки.
+
+    Ключ памяти включает папку-сторожа: одно и то же «serials/Сериал» может
+    лежать в двух папках сразу, и смешивать их состояния нельзя. В журнал идёт
+    короткое имя, с пометкой папки — только когда сторожей больше одного."""
+    items = []
+    for watch in watches:
+        for kind, sub in (('film', 'films'), ('series', 'serials'), ('anime', 'anime')):
+            root = os.path.join(watch, sub)
+            if not os.path.isdir(root):
+                continue
+            for name in sorted(os.listdir(root)):
+                if name.startswith('.') or name.startswith('_'):
+                    continue
+                path = os.path.join(root, name)
+                files = videos_under(path, ss)
+                if not files:
+                    continue
+                if kind in ('series', 'anime') and os.path.isfile(path):
+                    log(f'пропускаю {sub}/{name}: это файл, а сериал — папка с сезонами')
+                    continue
+                mode = 'film'
+                if kind == 'film' and os.path.isdir(path):
+                    # папка с одним видео — это один фильм, и имя у него от папки;
+                    # папка с несколькими — коллекция, плитка на файл
+                    mode = 'film-dir' if len(files) == 1 else 'films'
+                elif kind in ('series', 'anime'):
+                    mode = kind
+                label = sub + '/' + name
+                if len(watches) > 1:
+                    label = watch_tag(watch) + ' ' + label
+                items.append({'key': watch + '|' + sub + '/' + name, 'label': label,
+                              'path': path, 'mode': mode, 'files': files})
+    return items
+
+
+def forget(state, items, live):
+    """Выкинуть из памяти то, чего в папках больше нет. Только по папкам,
+    которые СЕЙЧАС на месте: отвалившийся диск иначе обнулил бы и счётчик
+    неудач, и сторож снова взялся бы за то, что уже падало трижды."""
+    keys = {it['key'] for it in items}
+    for key in list(state):
+        if '|' not in key:
+            del state[key]      # память старого формата, без папки в ключе
+        elif key.split('|', 1)[0] in live and key not in keys:
+            del state[key]
+
+
+def clashes(items, log):
+    """Одно и то же имя в двух папках-сторожах даёт на приставке ОДИН путь.
+    Первое уедет, второе send-series.py сочтёт «уже на месте» и ничего не
+    отправит, а проверка найдёт файл по имени и признает доставку — сторож
+    удалит второй исходник. Поэтому второе не берём совсем."""
+    seen, out = {}, []
+    for it in items:
+        name = it['key'].split('|', 1)[1]
+        if name in seen:
+            log(f'пропускаю {it["label"]}: такое же имя уже взято из {seen[name]} — '
+                f'на приставке это один путь, разберите вручную')
+            continue
+        seen[name] = watch_tag(it['key'].split('|', 1)[0])
+        out.append(it)
+    return out
+
+
+def dest_root(item, ss, remote):
+    """Корень библиотеки, в которую ляжет эта вещь: по нему смотрим место.
+    Спрашиваем ту сторону, а не берём из константы: сериал, уже лежащий на
+    старом диске, доезжает туда же, а библиотека фильмов переезжает на новый
+    диск, и до переезда её корень ещё старый."""
+    if item['mode'] == 'anime':
+        return os.path.dirname(ss.anime_dest(remote, os.path.basename(item['path'])))
+    if item['mode'] != 'series':
+        return ss.films_dest(remote)
+    return os.path.dirname(ss.series_dest(remote, os.path.basename(item['path'])))
+
+
+def film_title(path, ss):
+    """Имя плитки для одиночного файла. Без него send-series.py взял бы имя
+    файла как есть, и в медиатеке висело бы
+    «Fantastic.Beasts.2022.Lic.BDRip.MegaPeer»."""
+    return ss.film_name(path) or os.path.splitext(os.path.basename(path))[0]
+
+
+def destinations(item, ss, remote):
+    """Куда лягут файлы на той стороне — теми же правилами, что у
+    send-series.py. По ним потом и проверяем, что всё доехало."""
+    mode, path, files = item['mode'], item['path'], item['files']
+    if mode in ('film', 'film-dir', 'films'):
+        films = ss.films_dest(remote)
+        if mode == 'film':
+            return [films + '/' + film_title(path, ss) + '.mp4']
+        if mode == 'film-dir':
+            return [films + '/' + os.path.basename(path) + '.mp4']
+        return [films + '/' + ss.film_name(f) + '.mp4' for f in files]
+    name = os.path.basename(path)
+    base = (ss.anime_dest(remote, name) if mode == 'anime'
+            else ss.series_dest(remote, name))
+    out = []
+    for f in files:
+        rel = os.path.splitext(os.path.relpath(f, path))[0]
+        out.append(base + '/' + rel + '.mp4')
+    return out
+
+
+def send_args(item, args, ss, workdir):
+    cmd = [sys.executable, os.path.join(HERE, 'send-series.py'), item['path'],
+           '--audio', args.audio, '--workdir', workdir]
+    if item['mode'] == 'film':
+        cmd += ['--name', film_title(item['path'], ss)]
+    if item['mode'] == 'films':
+        cmd.append('--films')
+    if item['mode'] == 'anime':
+        cmd.append('--anime')
+    if item['mode'] == 'film-dir':
+        # одно видео в папке: send-series.py сам посчитал бы её сериалом
+        cmd = [sys.executable, os.path.join(HERE, 'send-series.py'), item['files'][0],
+               '--audio', args.audio, '--workdir', workdir,
+               '--name', os.path.basename(item['path'])]
+    if args.h264:
+        cmd.append('--h264')
+    for flag, value in (('--scale', args.scale), ('--bitrate', args.bitrate), ('--preset', args.preset)):
+        if value:
+            cmd += [flag, value]
+    if args.crf is not None:
+        cmd += ['--crf', str(args.crf)]
+    return cmd
+
+
+def remote_free(remote, path):
+    """Сколько свободно на той стороне под этой папкой. -1 — не узнали."""
+    rc, out, _ = remote.run('df -P -B1 ' + shlex.quote(path) + ' | tail -1')
+    if rc != 0:
+        return -1
+    parts = out.split()
+    try:
+        return int(parts[3])
+    except (IndexError, ValueError):
+        return -1
+
+
+def verify(remote, dests, log):
+    """Всё ли доехало. Проверяем размер, а не только имя: .part-файл от
+    оборванной отдачи send-series.py убирает сам, но мало ли."""
+    missing = []
+    for d in dests:
+        if remote.size(d) <= 0:
+            missing.append(d)
+    if missing:
+        log(f'   на приставке не хватает {len(missing)} из {len(dests)}: ' +
+            ', '.join(os.path.basename(m) for m in missing[:3]) + ('…' if len(missing) > 3 else ''))
+    return not missing
+
+
+def drop(path, log, dry):
+    if dry:
+        log(f'   удалил бы исходник {path}')
+        return
+    try:
+        if os.path.isdir(path):
+            shutil.rmtree(path)
+        else:
+            os.remove(path)
+        log(f'   исходник убран: {path}')
+    except OSError as e:
+        log(f'   исходник не убрался ({e}) — удалите вручную: {path}')
+
+
+def main():
+    ap = argparse.ArgumentParser(description='Сторож папки convert_and_del: конвертировать и отправить на приставку')
+    ap.add_argument('--watch', action='append', metavar='ПАПКА',
+                    help='папка со вложенными films/, serials/ и anime/; ключ можно '
+                         'повторять (по умолчанию — список WATCHES в начале файла)')
+    ap.add_argument('--workdir', default='',
+                    help='где собирать временные MP4 (по умолчанию выбирается сама: '
+                         'первая из WORKDIRS в send-series.py, где хватает места)')
+    ap.add_argument('--log-dir', default=os.path.join(STATE_DIR, 'log'), help='куда писать журнал прогонов')
+    ap.add_argument('--state', default=os.path.join(STATE_DIR, 'state.json'), help='файл памяти между прогонами')
+    ap.add_argument('--audio', default='all',
+                    help='звуковые дорожки для send-series.py: «all» (по умолчанию — все), '
+                         '«0» или «0,2». Плеер играет ПЕРВУЮ из взятых, но остальные пусть '
+                         'лежат в файле: иначе сменить озвучку можно только переотправкой')
+    ap.add_argument('--scale', default='', help='уменьшить картинку: «720p», «70%%»')
+    ap.add_argument('--bitrate', default='', help='битрейт видео: «4M»')
+    ap.add_argument('--preset', default='', help='пресет x264: fast, medium, slow')
+    ap.add_argument('--crf', type=int, default=None, help='качество при перекодировании')
+    ap.add_argument('--settle', type=int, default=600,
+                    help='сколько секунд файл должен не меняться, чтобы его взять (0 — брать сразу)')
+    ap.add_argument('--reserve', type=int, default=RESERVE // (1 << 30),
+                    help='сколько ГБ оставлять свободными на приставке')
+    ap.add_argument('--h264', action=argparse.BooleanOptionalAction, default=True,
+                    help='приводить видео к h264 (по умолчанию да): hevc играет на приставке, '
+                         'но в браузере компьютера идёт со звуком и чёрным экраном. '
+                         '--no-h264 — копировать как есть, это быстрее')
+    ap.add_argument('--keep', action='store_true', help='не удалять исходники после отправки')
+    ap.add_argument('--dry-run', action='store_true', help='только показать, что сделал бы')
+    args = ap.parse_args()
+    args.watch = args.watch or list(WATCHES)
+
+    log, log_path = open_log(args.log_dir)
+    rc = run(args, log)
+    if log_path:
+        log(f'журнал: {log_path}')
+    log.close()
+    return rc
+
+
+def run(args, log):
+    os.makedirs(STATE_DIR, exist_ok=True)
+    lock_path = os.path.join(STATE_DIR, 'lock')
+    lock = open(lock_path, 'w')
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        log('прошлый прогон ещё идёт — файлы уже забраны им, выхожу')
+        return 0
+
+    # папки заводим сами, но только если диск на месте: без него os.makedirs
+    # создал бы папку в точке монтирования, и потом она мешала бы монтированию
+    live = []
+    for watch in args.watch:
+        if not os.path.isdir(watch):
+            if not os.path.isdir(os.path.dirname(watch)):
+                log(f'папки {watch} нет и заводить её негде (диск не смонтирован?) — пропускаю')
+                continue
+            log(f'завожу папку {watch}')
+        for sub in ('films', 'serials', 'anime'):
+            os.makedirs(os.path.join(watch, sub), exist_ok=True)
+        live.append(watch)
+    if not live:
+        log('ни одной папки-сторожа нет на месте — ничего не делаю')
+        return 0
+
+    ss = load('send_series', 'send-series.py')
+    rr = load('recode_remote', 'recode-remote.py')
+    state = read_state(args.state)
+    items = scan(live, ss, log)
+    forget(state, items, live)
+    items = clashes(items, log)
+    if not items:
+        write_state(args.state, state)
+        log('пусто')
+        return 0
+
+    now = int(time.time())
+    ready = []
+    for it in items:
+        fp = fingerprint(it['files'])
+        was = state.get(it['key'], {})
+        if was.get('fails', 0) >= MAX_FAILS and was.get('fp') == fp:
+            continue    # уже падало трижды подряд — не мучаем ни диск, ни сеть
+        if was.get('fp') != fp:
+            # ещё качается или только что положили — запоминаем и ждём
+            state[it['key']] = {'fp': fp, 'seen': now, 'fails': 0}
+            log(f'{it["label"]}: появилось или ещё пишется ({ss.human(fp["size"])}, файлов {fp["count"]}) — подожду')
+            continue
+        waited = now - was.get('seen', now)
+        if waited < args.settle:
+            log(f'{it["label"]}: устаканивается, прошло {waited} из {args.settle} с')
+            continue
+        it['fp'] = fp
+        ready.append(it)
+    write_state(args.state, state)
+    if not ready:
+        return 0
+
+    remote = rr.Remote(*rr.load_access())
+    try:
+        if not remote.wait_online(patience=120):
+            log('приставка недоступна — попробую в следующий раз')
+            return 0
+        for it in ready:
+            handle(it, args, ss, remote, state, log)
+            write_state(args.state, state)
+    finally:
+        remote.close()
+    return 0
+
+
+def handle(it, args, ss, remote, state, log):
+    size = it['fp']['size']
+    root = dest_root(it, ss, remote)
+    log(f'{it["label"]}: {it["mode"]}, файлов {it["fp"]["count"]}, {ss.human(size)} → {root}')
+
+    # временный MP4 собирается на этой машине по одному файлу за раз, поэтому
+    # нужен не весь сериал, а самый большой файл с запасом
+    biggest = max((os.path.getsize(f) for f in it['files'] if os.path.exists(f)), default=0)
+    need = int(biggest * 1.5)
+    if args.workdir:
+        workdir, here = args.workdir, local_free(args.workdir)
+    else:
+        workdir, here = pick_workdir(need, ss)
+    if not workdir or here < need:
+        log(f'   мало места: на сборку нужно около {ss.human(need)}, а больше всего '
+            f'свободно в {workdir or "—"} — {ss.human(max(here, 0))}; пропускаю')
+        return
+    log(f'   собираю в {workdir}: свободно {ss.human(here)}')
+
+    free = remote_free(remote, root)
+    reserve = args.reserve << 30
+    if free < 0:
+        log('   не узнал, сколько места на приставке — пропускаю до следующего раза')
+        return
+    # исходник — верхняя оценка: перекодирование ужимает, копия весит столько же
+    if free < size + reserve:
+        log(f'   на приставке мало места: свободно {ss.human(free)}, нужно {ss.human(size)} '
+            f'плюс запас {args.reserve} ГБ — пропускаю')
+        return
+    log(f'   место есть: свободно {ss.human(free)}')
+
+    # пути считаем один раз: библиотека может переехать на другой диск между
+    # отправкой и проверкой, и тогда проверка искала бы файлы не там
+    dests = destinations(it, ss, remote)
+    cmd = send_args(it, args, ss, workdir)
+    if args.dry_run:
+        log('   запустил бы: ' + ' '.join(shlex.quote(c) for c in cmd))
+        for d in dests[:5]:
+            log('   → ' + d)
+        return
+
+    t0 = time.time()
+    # вывод тянем построчно, а не в конце: сериал идёт часами, и всё это время
+    # в журнале не было бы ни строчки — не понять, работает оно вообще или висит
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, bufsize=1)
+    for line in proc.stdout:
+        line = line.rstrip()
+        if line:
+            log('   | ' + line)
+    rc = proc.wait()
+    if rc != 0:
+        log(f'   send-series.py вернул {rc}')
+
+    if verify(remote, dests, log):
+        log(f'   готово за {ss.hms(time.time() - t0)}')
+        state[it['key']] = {'fp': it['fp'], 'seen': int(time.time()), 'fails': 0, 'done': True}
+        if args.keep:
+            log('   исходник оставлен (--keep)')
+        else:
+            drop(it['path'], log, args.dry_run)
+            state.pop(it['key'], None)
+    else:
+        fails = state.get(it['key'], {}).get('fails', 0) + 1
+        state[it['key']] = {'fp': it['fp'], 'seen': int(time.time()), 'fails': fails}
+        log(f'   не доехало целиком, попытка {fails} из {MAX_FAILS}; исходник на месте')
+
+
+if __name__ == '__main__':
+    sys.exit(main())

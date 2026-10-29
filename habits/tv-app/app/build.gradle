@@ -1,0 +1,51 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Ключ подписи живёт вне репозитория: без того же ключа следующую версию не
+// поставить поверх старой, а утёкший ключ позволит подменить приложение.
+def signingProps = new Properties()
+def signingFile = new File(System.getProperty('user.home'), '.config/habits-tv/keystore.properties')
+if (signingFile.exists()) {
+    signingFile.withInputStream { signingProps.load(it) }
+}
+
+android {
+    namespace 'ru.resager.habitstv'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'ru.resager.habitstv'
+        // Android 5 — чтобы встала и на старые приставки
+        minSdk 21
+        // 34, а не 36: у приложений под Android 16 «Назад» обрабатывает сама система
+        // (predictive back) и кнопка пульта не доходит до dispatchKeyEvent —
+        // «Назад» закрывал приложение вместо шага назад по странице
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+    }
+
+    signingConfigs {
+        release {
+            if (signingFile.exists()) {
+                storeFile file(signingProps['storeFile'])
+                storePassword signingProps['storePassword']
+                keyAlias signingProps['keyAlias']
+                keyPassword signingProps['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingFile.exists() ? signingConfigs.release : null
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+}
