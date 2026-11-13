@@ -1,0 +1,15 @@
+[Unit]
+Description=tg bot
+
+[Service]
+ExecStart=/opt/webapps/striks-api/striksapi
+WorkingDirectory=/opt/webapps/striks-api/
+Restart=on-failure
+RestartSec=5s
+Environment=SERVER_URL=:8099
+Environment=POSTGRES_DB=""
+Environment=POSTGRES_USER=""
+Environment=POSTGRES_PASSWORD=""
+
+[Install]
+WantedBy=multi-user.target
