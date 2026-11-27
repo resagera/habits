@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta charset="UTF-8">
+    <title>Daily Tracker</title>
+    <link rel="stylesheet" href="style.css?v=211">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+        @theme {
+            --color-clifford: #da373d;
+        }
+    </style>
+</head>
+<body>
+<div id="fixed-background" class="fixed-background"></div>
+<div class="max-w-3xl mx-auto xp-4 scrollable-content">
+    <div id="header">
+        <span id="main-menu-button">
+            <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <!-- Верхняя полоска (длинная) -->
+                <rect x="3" y="8" width="18" height="2" rx="1" fill="currentColor" />
+                <!-- Нижняя полоска (короче) -->
+                <rect x="3" y="14" width="12" height="2" rx="1" fill="currentColor" />
+            </svg>
+        </span>
+        <h1 id="main-title">Habits</h1>
+    </div>
+    <div class="overlay" id="overlay"></div>
+    <div id="main-menu">
+        <nav class="sidebar" id="sidebar">
+            <h2 id="main-menu-title">Habits</h2>
+            <ul>
+                <li><a href="#">Main</a></li>
+                <li>
+                    <button id="tab-tracker" class="flex-1 py-2 text-center border-b-2 border-blue-500 font-semibold top-tab-btn menu-item-icon" data-tab="trackerTab" data-title="Tracker">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+                            <rect x="0" y="0" width="50" height="50" rx="10" fill="#7cde4a"/>
+                            <rect x="50" y="0" width="50" height="50" rx="10" fill="#0d8020"/>
+                            <rect x="0" y="50" width="50" height="50" rx="10" fill="#222222"/>
+                            <rect x="50" y="50" width="50" height="50" rx="10" fill="#ffffff"/>
+                        </svg>
+                        <span class="menu-item-text">Tracker</span>
+                    </button>
+                    <button id="tab-checks" class="flex-1 py-2 text-center border-b-2 top-tab-btn" data-tab="checksTab" data-title="Checker">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+                            <path d="M15,15 H85 A10,10 0 0,1 95,25 V85 A10,10 0 0,1 85,95 H15 A10,10 0 0,1 5,85 V25 A10,10 0 0,1 15,15 Z" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M30,50 L45,65 L70,40" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <span class="menu-item-text">Checker</span>
+                    </button>
+                    <button id="tab-links-btn" class="flex-1 py-2 text-center border-b-2 top-tab-btn" data-tab="tab-links" data-title="Links">
+                        <svg  fill="currentColor" xmlns="http://www.w3.org/2000/svg"
+                             width="800px" height="800px" viewBox="0 0 512 512"  xml:space="preserve">
+                        <g>
+                            <path class="st0" d="M509.681,102.798c-4.641-24-16.344-47.141-34.875-65.578C462.462,24.86,448.087,15.501,432.79,9.298
+                                c-22.984-9.297-48.047-11.609-72.047-7c-23.953,4.641-47.047,16.391-65.578,34.922l-98.578,98.594
+                                c-0.516,0.484-0.984,1-1.438,1.531c0.172-0.031,0.328-0.094,0.5-0.094c28.969-5.797,58.734-3.094,86.125,7.828
+                                c0.141,0.031,0.297,0.125,0.438,0.172l60.516-60.516c5.906-5.891,12.578-10.203,19.781-13.109
+                                c10.719-4.375,22.609-5.484,33.922-3.266c11.359,2.188,21.984,7.594,30.813,16.375c5.906,5.906,10.234,12.578,13.156,19.766
+                                c4.375,10.719,5.469,22.625,3.266,33.953c-2.219,11.344-7.594,21.969-16.422,30.797l-98.609,98.625
+                                c-5.891,5.906-12.547,10.234-19.734,13.156c-10.75,4.359-22.672,5.438-33.984,3.266c-11.297-2.219-21.953-7.594-30.813-16.422
+                                c-4.766-4.797-8.484-10.078-11.297-15.75c-0.281-0.063-0.578-0.156-0.875-0.203c-6.578-1.234-13.625-0.547-19.797,2.031
+                                c-4.266,1.781-8.141,4.359-11.484,7.734l-1.922,1.953c-10,12.125-17.875,29.266-2.109,51.828
+                                c12.328,12.297,26.672,21.656,42,27.859c22.984,9.328,47.984,11.609,71.984,6.969c23.969-4.609,47.063-16.328,65.594-34.891
+                                l98.609-98.594c12.313-12.328,21.688-26.719,27.891-42.047C512.009,151.813,514.306,126.782,509.681,102.798z"/>
+                            <path class="st0" d="M230.259,366.907c-0.188-0.094-0.313-0.125-0.469-0.188l-60.516,60.531
+                                c-5.891,5.906-12.563,10.203-19.734,13.156c-10.75,4.375-22.641,5.438-33.953,3.266c-11.328-2.219-21.984-7.594-30.813-16.422
+                                c-5.906-5.922-10.219-12.563-13.156-19.766c-4.359-10.719-5.453-22.609-3.25-33.953c2.188-11.328,7.578-21.953,16.406-30.797
+                                l98.625-98.641c5.875-5.891,12.547-10.188,19.734-13.109c10.734-4.406,22.609-5.469,33.969-3.297
+                                c11.313,2.234,21.953,7.594,30.781,16.406c4.797,4.781,8.516,10.109,11.344,15.781c0.266,0.078,0.563,0.141,0.859,0.219
+                                c6.594,1.203,13.641,0.484,19.766-2.047c4.313-1.797,8.172-4.406,11.516-7.781l1.922-1.922c10-12.109,17.844-29.281,2.109-51.828
+                                c-12.297-12.313-26.672-21.641-41.984-27.859c-23-9.297-48-11.609-72.031-6.984c-23.969,4.625-47.047,16.391-65.594,34.906
+                                l-98.578,98.625c-12.344,12.266-21.719,26.703-27.891,42.031c-9.328,22.953-11.641,47.984-6.984,71.953
+                                c4.641,24.047,16.359,47.094,34.875,65.594c12.328,12.359,26.719,21.719,42.031,27.938c22.984,9.313,48,11.594,72,6.953
+                                c24-4.609,47.078-16.313,65.578-34.891l98.609-98.641c0.516-0.453,0.984-1,1.453-1.453c-0.156,0-0.344,0.063-0.5,0.063
+                                C287.399,380.517,257.634,377.829,230.259,366.907z"/>
+                        </g>
+                        </svg>
+                        <span class="menu-item-text">Links</span>
+                    </button>
+                    <button id="tab-metrics" class="flex-1 py-2 text-center border-b-2 top-tab-btn" data-tab="metricsTab" data-title="Metrics" style="display:none;">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" preserveAspectRatio="xMidYMid meet">
+                            <rect x="10" y="220" width="192" height="16" rx="8" fill="#ffffff" opacity="0.8"></rect>
+                            <rect x="122" y="220" width="80" height="16" rx="8" fill="#666666" opacity="0.8"></rect>
+                            <rect x="26" y="140" width="32" height="80" rx="16" fill="#ff5544"></rect>
+                            <rect x="74" y="76" width="32" height="144" rx="16" fill="#ffc107"></rect>
+                            <rect x="122" y="124" width="32" height="96" rx="16" fill="#4caf50"></rect>
+                            <rect x="170" y="28" width="32" height="192" rx="16" fill="#64b5f6"></rect>
+                        </svg>
+                        <span class="menu-item-text">Metrics</span>
+                    </button>
+                    <button id="tab-diary" class="flex-1 py-2 text-center border-b-2 top-tab-btn" data-tab="diaryTab" data-title="Diary">
+                        <svg fill="currentColor" width="800px" height="800px" viewBox="0 0 256 256" id="Flat" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M172,124.00586a12.00028,12.00028,0,0,1-12,12H96a12,12,0,1,1,0-24h64A12.00028,12.00028,0,0,1,172,124.00586Zm-12,28H96a12,12,0,1,0,0,24h64a12,12,0,0,0,0-24Zm60-104v152a36.04061,36.04061,0,0,1-36,36H72a36.04061,36.04061,0,0,1-36-36v-152a20.02229,20.02229,0,0,1,20-20H72v-4a12,12,0,0,1,24,0v4h20v-4a12,12,0,0,1,24,0v4h20v-4a12,12,0,0,1,24,0v4h16A20.02229,20.02229,0,0,1,220,48.00586Zm-24,4H184v4a12,12,0,0,1-24,0v-4H140v4a12,12,0,0,1-24,0v-4H96v4a12,12,0,0,1-24,0v-4H60v148a12.01312,12.01312,0,0,0,12,12H184a12.01312,12.01312,0,0,0,12-12Z"/>
+                        </svg>
+                        <span class="menu-item-text">Diary</span>
+                    </button>
+                    <button id="tab-pass" class="flex-1 py-2 text-center border-b-2 top-tab-btn" data-tab="passTab" data-title="Passwords">
+                        <svg fill="currentColor" height="800px" width="800px" version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+                             viewBox="0 0 512 512" xml:space="preserve">
+                    <g>
+                        <g>
+                            <path d="M461.913,289.391H50.087C22.468,289.391,0,311.859,0,339.478v100.174c0,27.619,22.468,50.087,50.087,50.087h411.826
+                                c27.619,0,50.087-22.468,50.087-50.087V339.478C512,311.859,489.532,289.391,461.913,289.391z M157.847,401.369
+                                c6.521,6.521,6.521,17.087,0,23.609c-3.261,3.261-7.533,4.892-11.804,4.892c-4.271,0-8.544-1.631-11.804-4.892l-11.805-11.804
+                                l-11.804,11.804c-3.261,3.261-7.533,4.892-11.804,4.892s-8.544-1.631-11.804-4.892c-6.521-6.521-6.521-17.087,0-23.609
+                                l11.803-11.804l-11.804-11.804c-6.521-6.521-6.521-17.087,0-23.609c6.521-6.521,17.087-6.521,23.609,0l11.804,11.804
+                                l11.804-11.804c6.521-6.521,17.087-6.521,23.609,0c6.521,6.521,6.521,17.087,0,23.609l-11.804,11.804L157.847,401.369z
+                                 M291.413,401.369c6.521,6.521,6.521,17.087,0,23.609c-3.261,3.261-7.533,4.892-11.804,4.892c-4.271,0-8.544-1.631-11.804-4.892
+                                L256,413.174l-11.804,11.804c-3.261,3.261-7.533,4.892-11.804,4.892c-4.271,0-8.544-1.631-11.804-4.892
+                                c-6.521-6.521-6.521-17.087,0-23.609l11.803-11.804l-11.804-11.804c-6.521-6.521-6.521-17.087,0-23.609
+                                c6.521-6.521,17.087-6.521,23.609,0L256,365.956l11.804-11.804c6.521-6.521,17.087-6.521,23.609,0
+                                c6.521,6.521,6.521,17.087,0,23.609l-11.804,11.804L291.413,401.369z M424.978,401.369c6.521,6.521,6.521,17.087,0,23.609
+                                c-3.261,3.261-7.533,4.892-11.804,4.892s-8.544-1.631-11.804-4.892l-11.805-11.804l-11.804,11.804
+                                c-3.261,3.261-7.533,4.892-11.804,4.892s-8.544-1.631-11.804-4.892c-6.521-6.521-6.521-17.087,0-23.609l11.803-11.804
+                                l-11.804-11.804c-6.521-6.521-6.521-17.087,0-23.609c6.521-6.521,17.087-6.521,23.609,0l11.804,11.804l11.804-11.804
+                                c6.521-6.521,17.087-6.521,23.609,0c6.521,6.521,6.521,17.087,0,23.609l-11.804,11.804L424.978,401.369z"/>
+                        </g>
+                    </g>
+                            <g>
+                        <g>
+                            <path d="M339.478,122.435h-16.696V89.043c0-36.826-29.956-66.783-66.783-66.783s-66.783,29.956-66.783,66.783v33.391h-16.696
+                                c-9.217,0-16.696,7.479-16.696,16.696v100.174c0,9.217,7.479,16.696,16.696,16.696h166.957c9.217,0,16.696-7.479,16.696-16.696
+                                V139.13C356.174,129.913,348.695,122.435,339.478,122.435z M289.391,122.435h-66.783V89.043c0-18.413,14.978-33.391,33.391-33.391
+                                s33.391,14.978,33.391,33.391V122.435z"/>
+                        </g>
+                    </g>
+                </svg>
+                        <span class="menu-item-text">Passwords</span>
+                    </button>
+                    <button id="tab-exchange" class="flex-1 py-2 text-center border-b-2 top-tab-btn" data-tab="exchangeTab" data-title="Exchanges">
+                        <svg fill="currentColor" height="800px" width="800px" version="1.1" id="Capa_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+                             viewBox="0 0 314.916 314.916" xml:space="preserve">
+                    <g>
+                        <g>
+                            <path d="M290.534,92.842c-13.129-24.332-34.194-44.113-59.315-55.701c-7.932-3.658-16.29-6.518-24.842-8.499l-6.146-1.425
+                                l10.034-7.787c1.266-0.982,2.073-2.399,2.274-3.988c0.2-1.59-0.231-3.163-1.213-4.43l-6.745-8.69
+                                C203.435,0.846,201.706,0,199.838,0c-1.324,0-2.63,0.447-3.676,1.26l-36.494,28.323c-2.614,2.028-3.09,5.805-1.062,8.418
+                                l28.319,36.494c0.983,1.267,2.399,2.074,3.997,2.275c1.578,0.192,3.181-0.252,4.421-1.214l8.69-6.744
+                                c2.613-2.028,3.089-5.805,1.062-8.419l-8.317-10.718l8.737,2.438c5.451,1.52,10.858,3.509,16.071,5.913
+                                c20.876,9.63,37.661,25.337,48.54,45.424c1.049,1.938,3.072,3.143,5.278,3.143c0.921,0,1.844-0.218,2.67-0.629l9.851-4.901
+                                c1.447-0.72,2.557-2.017,3.047-3.558C291.462,95.963,291.302,94.263,290.534,92.842z"/>
+                            <path d="M144.491,240.417c-0.982-1.266-2.399-2.072-3.987-2.274c-1.579-0.197-3.183,0.247-4.431,1.213l-8.691,6.745
+                                c-1.266,0.983-2.073,2.399-2.274,3.988c-0.2,1.59,0.23,3.163,1.213,4.43l8.318,10.719l-8.736-2.437
+                                c-5.454-1.521-10.859-3.511-16.067-5.912c-20.876-9.63-37.661-25.338-48.542-45.427c-1.051-1.939-3.073-3.143-5.278-3.143
+                                c-0.92,0-1.844,0.218-2.67,0.629l-9.851,4.902c-1.447,0.72-2.557,2.016-3.047,3.558c-0.489,1.541-0.328,3.241,0.439,4.663
+                                c13.131,24.333,34.195,44.115,59.314,55.702c7.938,3.661,16.296,6.52,24.84,8.501l6.146,1.425l-10.031,7.784
+                                c-1.267,0.982-2.075,2.399-2.275,3.991c-0.2,1.591,0.231,3.164,1.214,4.429l6.747,8.69c1.144,1.476,2.872,2.321,4.742,2.321
+                                c1.323,0,2.629-0.447,3.677-1.26l36.494-28.322c2.613-2.028,3.089-5.805,1.061-8.419L144.491,240.417z"/>
+                        </g>
+                        <path d="M101.91,189.474c9.617,0,18.95-2.109,27.737-6.27c2.496-1.181,3.561-4.162,2.379-6.658l-8.129-17.173
+                            c-1.181-2.496-4.163-3.559-6.659-2.38c-4.879,2.31-10.037,3.48-15.329,3.48c-18.474,0-34.485-14.332-39.785-34.824h42.508
+                            c2.761,0,5-2.238,5-5v-19c0-2.761-2.239-5-5-5H62.126c5.3-20.491,21.312-34.823,39.784-34.823c5.285,0,10.445,1.173,15.339,3.484
+                            c2.496,1.179,5.478,0.111,6.657-2.385l8.116-17.179c1.179-2.497,0.112-5.477-2.385-6.656c-8.797-4.157-18.126-6.265-27.728-6.265
+                            c-34.039,0-63.188,27.139-69.399,63.823h-4.776c-2.762,0-5,2.239-5,5v19c0,2.762,2.238,5,5,5h4.776
+                            C38.72,162.335,67.869,189.474,101.91,189.474z"/>
+                        <path d="M249.459,212.713c-19.952-6.043-23.721-8.726-23.722-16.886c0-8,13.169-10.135,20.957-10.135
+                            c7.496,0,16.414,2.378,21.687,5.783c1.114,0.72,2.469,0.966,3.764,0.688c1.296-0.279,2.429-1.062,3.148-2.176l10.308-15.961
+                            c0.719-1.114,0.967-2.468,0.688-3.765c-0.279-1.296-1.062-2.429-2.176-3.148c-6.342-4.096-14.36-7.206-22.929-8.93l0.001-15.773
+                            c0-2.762-2.238-5-4.999-5l-19-0.001h-0.001c-1.326,0-2.598,0.526-3.535,1.464c-0.938,0.938-1.465,2.21-1.465,3.536l-0.001,15.659
+                            c-21.683,4.359-35.447,18.83-35.447,37.759c0.004,31.218,26.67,39.294,44.316,44.638c19.431,5.886,22.179,8.437,22.126,14.806
+                            c0,1.609-0.372,3.513-3.129,5.42c-3.59,2.484-9.714,3.912-16.807,3.918c-0.038,0-0.075,0-0.113,0
+                            c-9.217-0.015-19.561-4.157-25.171-10.085c-1.896-2.006-5.062-2.093-7.068-0.194l-13.8,13.06c-2.005,1.898-2.093,5.063-0.194,7.068
+                            c8.722,9.218,21.665,15.842,35.288,18.199v15.234c0,2.762,2.239,5,5,5h19c2.761,0,5-2.238,5-5v-16.471
+                            c5.81-1.529,10.965-3.836,15.367-6.882c10.078-6.974,15.628-17.34,15.627-29.147C292.427,225.726,266.569,217.895,249.459,212.713z
+                            "/>
+                    </g>
+                </svg>
+                        <span class="menu-item-text">Exchanges</span>
+                    </button>
+                    <button id="tab-settings" class="flex-1 py-2 text-center border-b-2 top-tab-btn" data-tab="">
+                        <svg width="800px" height="800px" viewBox="0 0 30 30" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:sketch="http://www.bohemiancoding.com/sketch/ns">
+
+
+                            <desc>Created with Sketch Beta.</desc>
+                            <defs>
+
+                            </defs>
+                            <g id="Page-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd" sketch:type="MSPage">
+                                <g id="Icon-Set-Filled" sketch:type="MSLayerGroup" transform="translate(-103.000000, -362.000000)" fill="currentColor">
+                                    <path d="M118,382 C115.261,382 113.042,379.762 113.042,377 C113.042,374.238 115.261,372 118,372 C120.739,372 122.959,374.238 122.959,377 C122.959,379.762 120.739,382 118,382 L118,382 Z M132.008,380.536 L129.685,379.184 C129.815,378.474 129.901,377.749 129.901,377 C129.901,376.252 129.815,375.526 129.685,374.816 L132.008,373.464 C132.957,372.912 133.281,371.688 132.733,370.732 L130.75,367.268 C130.203,366.312 128.989,365.983 128.041,366.536 L125.694,367.901 C124.598,366.961 123.352,366.192 121.967,365.697 L121.967,364 C121.967,362.896 121.079,362 119.983,362 L116.017,362 C114.921,362 114.033,362.896 114.033,364 L114.033,365.697 C112.648,366.192 111.402,366.961 110.306,367.901 L107.959,366.536 C107.011,365.983 105.797,366.312 105.25,367.268 L103.267,370.732 C102.719,371.688 103.044,372.912 103.992,373.464 L106.315,374.816 C106.185,375.526 106.099,376.252 106.099,377 C106.099,377.749 106.185,378.474 106.315,379.184 L103.992,380.536 C103.044,381.088 102.719,382.312 103.267,383.268 L105.25,386.732 C105.797,387.688 107.011,388.017 107.959,387.464 L110.306,386.099 C111.402,387.039 112.648,387.809 114.033,388.303 L114.033,390 C114.033,391.104 114.921,392 116.017,392 L119.983,392 C121.079,392 121.967,391.104 121.967,390 L121.967,388.303 C123.352,387.809 124.598,387.039 125.694,386.099 L128.041,387.464 C128.989,388.017 130.203,387.688 130.75,386.732 L132.733,383.268 C133.281,382.312 132.957,381.088 132.008,380.536 L132.008,380.536 Z M118,374 C116.357,374 115.025,375.344 115.025,377 C115.025,378.657 116.357,380 118,380 C119.643,380 120.975,378.657 120.975,377 C120.975,375.344 119.643,374 118,374 L118,374 Z" id="settings" sketch:type="MSShapeGroup">
+
+                                    </path>
+                                </g>
+                            </g>
+                        </svg>
+                        <span class="menu-item-text">Settings</span>
+                    </button>
+                </li>
+            </ul>
+        </nav>
+    </div>
+    <div id="page-main">
+
+        <!-- Вкладка Mark -->
+        <div id="trackerTab" class="tab active">
+            <div id="categories" class="space-y-4"></div>
+            <input class="full-input" id="new-category" placeholder="Новая категория...">
+            <button id="add-btn" id2="addCategory" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded w-full">Добавить категорию</button>
+        </div>
+
+        <!-- Вкладка Metrics -->
+        <div id="metricsTab" class="tab">
+            <!-- вставь в нужное место UI -->
+            <div id="tab-metrics-container" class="">
+                <div id="metrics-controls" style="align-items:center;margin-bottom:12px;">
+                    <input id="metric-name" placeholder="Название (например: Вес)" class="full-input"/>
+                    <select id="metric-max" class="full-input">
+                        <option value="1">1 раз в день</option>
+                        <option value="2">2 раза в день</option>
+                        <option value="0">Без ограничения</option>
+                    </select>
+                    <input id="metric-color" type="color" value="#22c55e" class=" full-input" />
+                    <button class="full-input bg-blue-600" id="add-metric-btn">➕ Добавить</button>
+                </div>
+
+                <div style="display:flex;gap:12px;">
+                    <div style="flex:1">
+                        <div id="metrics-list"></div>
+                    </div>
+
+                    <div style="flex:2">
+                        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+                            <div>
+                                <button class="period-btn" data-period="week">Неделя</button>
+                                <button class="period-btn" data-period="month">Месяц</button>
+                                <button class="period-btn" data-period="quarter">Квартал</button>
+                                <button class="period-btn" data-period="year">Год</button>
+                            </div>
+                            <div style="margin-left:auto;">
+                                <label><input type="checkbox" id="compare-mode" /> Сравнить</label>
+                            </div>
+                        </div>
+
+                        <canvas id="metrics-chart" height="220"></canvas>
+
+                        <div id="chart-legend" style="margin-top:8px;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chart.js CDN -->
+            <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+
+        </div>
+
+        <!-- Вкладка Check -->
+        <div id="checksTab" class="tab">
+            <div id="checkGroups" class="space-y-4"></div>
+            <div id="check-groups"></div>
+            <!--<input class="full-input" id="new-group" placeholder="Новая группа...">-->
+            <button id="addCheckGroup" id2="addCheckGroup" class="mt-4 px-4 py-2 bg-green-600 text-white rounded w-full">Добавить группу</button>
+        </div>
+
+        <!-- Вкладка Diary -->
+        <div id="diaryTab" class="tab">
+
+            <div class="mb-2">
+                <input type="datetime-local" id="diary-date" class="border p-1 rounded full-input" />
+            </div>
+
+            <textarea id="diary-text" rows="4" class="border w-full p-2 rounded size-content" placeholder="Напиши, что произошло сегодня..."></textarea>
+
+            <button id="diary-save" class="bg-blue-500 text-white px-3 py-1 rounded mt-2">Сохранить</button>
+
+            <div class="mt-4">
+                <input type="text" id="diary-search" class="border p-1 rounded w-full" placeholder="Поиск по записям..." />
+            </div>
+            <div class="mt-3 flex space-x-2 items-center input-group">
+                <input type="date" id="filter-from" class="border p-1 rounded" />
+                <input type="date" id="filter-to" class="border p-1 rounded" />
+                <button id="filter-apply" class="text-white px-3 py-1 rounded">🔍</button>
+            </div>
+            <br><h5>History:</h5>
+            <div id="diary-list" class="mt-3 space-y-2"></div>
+            </div>
+
+        <!-- Вкладка Pass -->
+        <div id="passTab" class="tab">
+            <div class="" id="tab-passwords">
+                <!-- Блок авторизации -->
+                <div id="password-lock">
+                    <input type="password" id="master-password" placeholder="Введите общий пароль" class="full-input"">
+                    <button id="unlock-btn" class="mt-4 px-4 py-2 bg-red-600 text-white rounded w-full">Разблокировать</button>
+                </div>
+
+                <!-- Основной интерфейс -->
+                <div id="passwords-content" style="display:none">
+                    <div class="password-toolbar">
+                        <button id="export-passwords">📤 Экспорт</button>
+                        <input type="file" id="import-passwords" style="display:none">
+                        <button id="import-btn">📥 Импорт</button>
+                        <button id="lock-btn">🔒 Заблокировать</button>
+                        <button id="add-password-btn">+</button>
+                    </div>
+
+                    <div id="password-list"></div>
+                </div>
+            </div>
+
+        </div>
+        <!-- Вкладка Exchanges -->
+        <div id="exchangeTab" class="tab">
+            <div class="" id="tab-converter">
+                <h2>Обмен валют</h2>
+
+                <div class="converter-controls">
+                    <select id="base-currency"></select>
+                    <button id="add-currency-btn"  class="mt-4 px-4 py-2 bg-green-600 text-white rounded w-full">➕ Добавить валюту</button>
+                </div>
+
+                <div id="currency-list"></div>
+            </div>
+
+        </div>
+        <div class="tab" id="tab-links">
+            <div class="links-controls">
+                <button class="circle-btn in-left f16" id="add-folder-btn">+📂</button>
+                <button class="circle-btn in-right f16" id="add-link-btn">+🔗</button>
+                <input class="search-box wide-input full-input" id="links-search" placeholder="Поиск...">
+                <div id="links-stats" class="links-stats"></div>
+            </div>
+            <div id="links-tree"></div>
+        </div>
+        <!-- Вкладка Template -->
+        <div id="newTab" class="hidden">
+        </div>
+        </div>
+    </div>
+    <script>
+        const lastActiveTab = localStorage.getItem(`last-active-tab`) || "trackerTab";
+        const lastActiveTabTitle = localStorage.getItem(`last-active-tab-title`);
+        document.querySelectorAll('.tab').forEach(tab => {
+            if (tab.id === lastActiveTab) {
+                tab.classList.add('active');
+            } else {
+                tab.classList.remove('active');
+            }
+            if (lastActiveTabTitle) {
+                document.getElementById("main-title").textContent = lastActiveTabTitle;
+            }
+        });
+    </script>
+    <div id="page-category-settings" class="settings">
+        <div>
+            <input id="category-name-preview" type="hidden">
+            <label for="category-name">Название категории</label><input class="full-input" id="category-name" type="text">
+        </div>
+        <div>
+            <label for="category-color">Цвет элементов категории</label> <input id="category-color" type="color">
+        </div>
+        <div>
+            <button id="save" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded w-full">Сохранить</button>
+        </div>
+    </div>
+    <div id="page-group-settings" class="settings">
+
+    </div>
+    <div id="page-global-settings" class="settings">
+        <div id="background-settings" class="p-4 settings-section">
+            <h3 class="text-lg font-semibold mb-2 settings-title">Настройки фона</h3>
+
+            <button class="open-popup-btn bg-blue-500 text-white px-3 py-1 rounded">Выбрать фон</button><br />
+            <select id="bg-preset" class="border p-2 rounded w-full mb-2">
+                <option value="">— Выбрать из списка —</option>
+            </select>
+
+            <div class="settings-item">
+                <label class="block mb-2">Или загрузите своё:</label>
+                <input type="file" id="bg-upload" accept="image/*" class="mb-3 bg-blue-500 text-white px-3 py-1 rounded">
+                <label for="bg-url">URL изображения:</label>
+                <input type="text" id="bg-url" placeholder="https://example.com/background.jpg" />
+            </div>
+
+            <label class="block mb-2">Размещение:</label>
+            <select id="bg-position" class="border p-2 rounded w-full mb-3">
+                <option value="cover">Заполнить</option>
+                <option value="repeat">Замостить</option>
+                <option value="center">По центру</option>
+            </select>
+
+            <button id="bg-save" class="bg-blue-500 text-white px-3 py-1 rounded">Применить</button>
+            <button id="bg-reset" class="bg-red-500 text-white px-3 py-1 rounded">Убрать</button>
+        </div>
+        <div id="theme-settings" class="p-4 settings-section">
+            <h3 class="text-lg font-semibold mb-2 settings-title">Тема интерфейса</h3>
+            <div class="flex items-center space-x-3 mb-3">
+                <label class="flex items-center space-x-1">
+                    <input type="radio" name="theme" value="light" checked>
+                    <span>Светлая 🌞</span>
+                </label>
+                <label class="flex items-center space-x-1">
+                    <input type="radio" name="theme" value="dark">
+                    <span>Тёмная 🌙</span>
+                </label>
+            </div>
+            <button id="theme-save" class="bg-blue-500 text-white px-3 py-1 rounded">Сохранить</button>
+        </div>
+
+        <div id="check-settings" class="p-4 settings-section">
+            <h3 class="text-lg font-semibold mb-2 settings-title">Settings check</h3>
+            <div class="settings-item">
+                <button id="export-checks">📤 Export</button>
+            </div>
+        </div>
+
+        <div id="passwords-settings" class="p-4 settings-section">
+            <h3 class="text-lg font-semibold mb-2 settings-title">Settings Passwords</h3>
+            <div class="settings-item">
+                <label for="import-links-textarea">Reset master password (all data will be removed):</label><br>
+                <button class="mt-4 px-4 py-2 tran-light text-white rounded nw-full" id="reset-master-password">Reset</button>
+            </div>
+        </div>
+
+        <div id="links-settings" class="p-4 settings-section">
+            <h3 class="text-lg font-semibold mb-2 settings-title">Settings links</h3>
+            <div class="settings-item">
+                <button class="mt-4 px-4 py-2 tran-light text-white rounded nw-full" id="export-links-btn">export links json</button>
+                <button class="mt-4 px-4 py-2 tran-light text-white rounded nw-full" id="import-links-btn">import links json</button>
+                <input type="file" id="import-file-input" class="hidden">
+                <label for="import-links-textarea">Import by:</label><br>
+                <textarea id="import-links-textarea" rows="4" class="border w-full p-2 rounded size-content"></textarea>
+                <br>
+                <label>Добавить в папку:</label>
+                <select id="import-links-folder-select" class="border p-2 rounded w-full mb-3"></select>
+                <br>
+
+                <label><input type="checkbox" id="import-links-by-text_get_web_head"> Get title from page (too long)</label><br>
+
+                <label><input type="checkbox" id="import-links-by-text_smart_tags"> Умный подбор тегов</label><br>
+
+                <label for="import-links-common-tags">Добавить всем импортируемым ссылкам теги:</label>
+                <input id="import-links-common-tags" placeholder="через запятую (например: work, go, docs)" class="full-input"><br>
+
+                <button class="mt-4 px-4 py-2 tran-light text-white rounded nw-full" id="import-links-btn-by-text">import by text field</button>
+                <button class="mt-4 px-4 py-2 tran-light text-white rounded nw-full" id="upload-links-to-api-btn">☁️ Выгрузить ссылки в API</button>
+                <br>
+                <br>
+                <label><input type="checkbox" id="links-show-favorites"> Отображать избранное ⭐</label>
+                <label><input type="checkbox" id="links-show-top10"> Отображать топ-10 📈</label>
+                <label><input type="checkbox" id="link-store-locally-toggle"> Хранить только локально</label>
+
+            </div>
+        </div>
+
+        <div id="diary-settings" class="p-4 settings-section">
+            <h3 class="text-lg font-semibold mb-2 settings-title">Settings diary</h3>
+            <div class="settings-item">
+                <h5 class="text-lg font-semibold mb-2 settings-title">Export</h5>
+                <div class="items-center space-x-2 my-2">
+                    <input type="date" id="export-from" class="border p-1 rounded full-input">
+                    <input type="date" id="export-to" class="border p-1 rounded full-input">
+                    <button id="export-txt" class="px-2 py-1 rounded bg-blue-600">To .txt</button>
+                    <button id="export-csv" class="px-2 py-1 rounded bg-blue-600">To .csv</button>
+                </div>
+            </div>
+        </div>
+        <div>
+            <button id="save-global-settings" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded w-full">Сохранить</button>
+        </div>
+    </div>
+</div>
+<div id="calendar-modal" class="modal fixed inset-0 bg-black bg-opacity-50 hidden justify-center items-center">
+    <div class="modal-content">
+        <h3 id="calendar-title"></h3>
+        <div id="calendar-container"></div>
+        <div class="calendar-nav">
+            <button id="prev-month">←</button>
+            <span class="close">&times; close</span>
+            <button id="next-month">→</button>
+        </div>
+    </div>
+</div>
+<div id="add-currency-modal" class="modal fixed inset-0 bg-black bg-opacity-50 justify-center items-center hidden">
+    <div class="modal-content">
+        <h3>Добавить валюту (3 буквы)</h3>
+        <input type="text" id="currency-to-add" maxlength="3" class="full-input">
+        <button id="modal-add-btn" class="mt-4 px-4 py-2 bg-green-600 text-white rounded">Добавить</button>
+        <button id="modal-cancel-btn" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded">Отмена</button>
+    </div>
+</div>
+
+<!-- Модалка добавления password -->
+<div id="add-password-modal" class="modal hidden">
+    <div class="modal-content">
+        <h3>Добавить пароль</h3>
+        <input type="text" id="password-name" class="wide-input full-input" placeholder="Название (например GitHub)">
+        <input type="text" id="password-login" class="wide-input full-input" placeholder="Логин / Email">
+        <input type="text" id="pass-description" class="wide-input full-input" placeholder="Описание">
+        <input type="text" id="password-value" class="wide-input full-input" placeholder="Пароль">
+        <button id="save-password-btn" class="mt-4 px-4 py-2 bg-green-600 text-white rounded">Сохранить</button>
+        <button id="cancel-password-btn" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded">Отмена</button>
+    </div>
+</div>
+
+<!-- Попап выбора изображения -->
+<div class="popup-overlay" id="imagePopup">
+    <div class="popup-container">
+        <div class="popup-header">
+            <div class="popup-title">Выберите изображение</div>
+            <button class="close-btn">&times;</button>
+        </div>
+        <div class="images-container" id="imagesGrid">
+            <!-- Картинки будут добавлены через JavaScript -->
+        </div>
+        <div class="popup-actions">
+            <button class="action-btn cancel-btn">Отмена</button>
+            <button class="action-btn confirm-btn">Выбрать</button>
+        </div>
+    </div>
+</div>
+
+<!-- Попап подтверждения удаления -->
+<div class="confirm-popup" id="confirmDeletePopup">
+    <div class="confirm-content">
+        <div class="confirm-title">Удалить изображение?</div>
+        <div class="confirm-message" id="confirmDeleteMessage">
+            Вы уверены, что хотите удалить это изображение? Это действие нельзя отменить.
+        </div>
+        <div class="confirm-actions">
+            <button class="action-btn cancel-btn" id="cancelDeleteBtn">Отмена</button>
+            <button class="action-btn confirm-delete-btn" id="confirmDeleteBtn">Удалить</button>
+        </div>
+    </div>
+</div>
+
+<!-- Фрейм -->
+<div id="link-frame-overlay" class="hidden">
+    <div id="link-frame-header">
+        <button id="close-frame-btn">✖ Закрыть</button>
+    </div>
+    <iframe id="link-frame"></iframe>
+</div>
+
+<!-- Модалка добавления ссылки -->
+<div id="add-link-modal" class="modal hidden">
+    <div class="modal-content">
+        <h3>Добавить ссылку</h3>
+        <input class="wide-input full-input" id="new-link-name" placeholder="Название">
+        <input class="wide-input full-input" id="new-link-url" placeholder="URL">
+        <input class="wide-input full-input" id="new-link-tags" placeholder="Теги (через запятую)">
+        <div id="create-tags-suggest" class="tag-suggest"></div>
+        <button class="mt-4 px-4 py-2 bg-green-600 text-white rounded w-full" id="save-new-link">Сохранить</button>
+        <button class="mt-4 px-4 py-2 bg-green-600 text-white rounded w-full" onclick="document.getElementById('add-link-modal').classList.add('hidden')">Отмена</button>
+    </div>
+</div>
+
+<!-- Модалка добавления папки -->
+<div id="add-folder-modal" class="modal hidden">
+    <div class="modal-content">
+        <h3>Название папки</h3>
+        <input class="wide-input full-input" id="new-folder-name" placeholder="Название папки">
+        <button class="mt-4 px-4 py-2 bg-green-600 text-white rounded w-full" id="save-new-folder">Сохранить</button>
+        <button class="mt-4 px-4 py-2 bg-green-600 text-white rounded w-full" onclick="document.getElementById('add-folder-modal').classList.add('hidden')">Отмена</button>
+    </div>
+</div>
+
+<div id="edit-link-modal" class="modal hidden">
+    <div class="modal-content">
+        <h3>Редактирование ссылки</h3>
+
+        <input class="wide-input full-input" id="edit-link-name" placeholder="Название">
+        <input class="wide-input full-input" id="edit-link-url" placeholder="URL">
+        <input class="wide-input full-input" id="edit-link-tags" placeholder="Теги (через запятую)">
+        <div id="edit-tags-suggest" class="tag-suggest"></div>
+        <label>Переместить в папку:</label>
+        <select class="wide-input full-input" id="edit-link-folder"></select>
+        <label style="display:block;margin-top:6px">
+            <input type="checkbox" id="edit-link-pinned"> Закрепить (Избранное)
+        </label>
+
+        <button class="mt-4 px-4 py-2 bg-green-600 text-white rounded w-full" id="edit-link-save">💾 Сохранить</button>
+        <button class="mt-4 px-4 py-2 bg-green-600 text-white rounded w-full" id="edit-link-copy">📋 Копировать</button>
+        <button class="mt-4 px-4 py-2 bg-green-600 text-white rounded w-full" id="edit-link-open">🌐 Перейти</button>
+        <button class="mt-4 px-4 py-2 bg-red-600 text-white rounded w-full" id="edit-link-delete">🗑 Удалить</button>
+        <button class="mt-4 px-4 py-2 bg-blue-600 text-white rounded w-full" id="edit-link-cancel">Отмена</button>
+    </div>
+</div>
+
+<div id="edit-folder-modal" class="modal hidden">
+    <div class="modal-content">
+        <h3>Настройки папки</h3>
+
+        <label>Название папки:</label>
+        <input class="wide-input full-input" id="edit-folder-name">
+
+        <label>Пароль (опционально, шифрует содержимое):</label>
+        <input class="wide-input full-input" type="password" id="edit-folder-password" placeholder="Новый пароль">
+
+        <button class="mt-4 px-4 py-2 bg-green-600 text-white rounded w-full" id="edit-folder-save">💾 Сохранить</button>
+        <hr>
+        <div id="folder-share-block" style="display:none">
+            <textarea id="folder-share-text" readonly></textarea><br>
+            <button class="mt-4 px-4 py-2 bg-green-600 text-white rounded w-full" id="folder-share-copy">📋 Копировать</button>
+            <button class="mt-4 px-4 py-2 bg-green-600 text-white rounded w-full" id="folder-share-send">🚀 Отправить в бота</button>
+        </div>
+        <button class="mt-4 px-4 py-2 bg-green-600 text-white rounded w-full" id="folder-generate-share">Поделиться содержимым</button>
+        <hr>
+        <button class="mt-4 px-4 py-2 bg-green-600 text-white rounded w-full" id="folder-export-btn">📤 Экспортировать папку</button>
+
+        <button class="mt-4 px-4 py-2 bg-red-600 text-white rounded w-full" id="edit-folder-delete">🗑 Удалить папку</button>
+        <button class="mt-4 px-4 py-2 bg-blue-600 text-white rounded w-full" id="edit-folder-cancel">Отмена</button>
+    </div>
+</div>
+
+<div id="folder-password-modal" class="modal hidden">
+    <div class="modal-content">
+        <h3>Введите пароль папки</h3>
+        <input class="wide-input full-input" type="password" id="folder-password-input">
+        <button class="mt-4 px-4 py-2 bg-green-600 text-white rounded w-full" id="folder-password-ok">OK</button>
+        <button class="mt-4 px-4 py-2 bg-blue-600 text-white rounded w-full"  id="folder-password-cancel">Отмена</button>
+    </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-4 py-2 rounded shadow-lg opacity-0 transition-opacity duration-500 pointer-events-none"></div>
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="script.js?v=211"></script>
+<h5 class="foot-version text-center">v2.211
+</h5>
+</body>
+</html>

@@ -1,0 +1,8 @@
+{"head":{"vars":["w","wLabel","t","y"]},"results":{"bindings":[
+{"w":{"type":"uri","value":"http://www.wikidata.org/entity/Q25188"},"wLabel":{"xml:lang":"ru","type":"literal","value":"Начало"},"t":{"type":"uri","value":"http://www.wikidata.org/entity/Q11424"},"y":{"type":"literal","value":"2010"}},
+{"w":{"type":"uri","value":"http://www.wikidata.org/entity/Q16290"},"wLabel":{"xml:lang":"en","type":"literal","value":"Star Trek: The Next Generation"},"t":{"type":"uri","value":"http://www.wikidata.org/entity/Q5398426"},"y":{"type":"literal","value":"1987"}},
+{"w":{"type":"uri","value":"http://www.wikidata.org/entity/Q16290"},"wLabel":{"xml:lang":"en","type":"literal","value":"Star Trek: The Next Generation"},"t":{"type":"uri","value":"http://www.wikidata.org/entity/Q11424"},"y":{"type":"literal","value":"1987"}},
+{"w":{"type":"uri","value":"http://www.wikidata.org/entity/Q189330"},"wLabel":{"xml:lang":"ru","type":"literal","value":"Тёмный рыцарь: Возрождение легенды"},"t":{"type":"uri","value":"http://www.wikidata.org/entity/Q11424"},"y":{"type":"literal","value":"2012"}},
+{"w":{"type":"uri","value":"http://www.wikidata.org/entity/Q99999999"},"wLabel":{"type":"literal","value":"Q99999999"},"t":{"type":"uri","value":"http://www.wikidata.org/entity/Q11424"}},
+{"w":{"type":"uri","value":"http://www.wikidata.org/entity/Q555"},"wLabel":{"xml:lang":"en","type":"literal","value":"Untitled Project"},"t":{"type":"uri","value":"http://www.wikidata.org/entity/Q11424"}}
+]}}
